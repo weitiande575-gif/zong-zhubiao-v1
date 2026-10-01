@@ -71,7 +71,22 @@ pre{
     id="batchName"
     placeholder="例如：271期测试"
   >
+<select id="periodMode">
+  <option value="SINGLE">单期</option>
+  <option value="RANGE">连续多期</option>
+</select>
 
+<input
+  id="startPeriod"
+  type="number"
+  placeholder="开始期，例如：250"
+>
+
+<input
+  id="endPeriod"
+  type="number"
+  placeholder="结束期，例如：274"
+>
   <button onclick="createBatch()">
     创建批次
   </button>
@@ -131,7 +146,14 @@ async function createBatch(){
   const name =
     document.getElementById("batchName")
       .value.trim();
+const periodMode =
+  document.getElementById("periodMode").value;
 
+const startPeriod =
+  document.getElementById("startPeriod").value.trim();
+
+const endPeriod =
+  document.getElementById("endPeriod").value.trim();
   const result =
     document.getElementById("createResult");
 
@@ -151,8 +173,15 @@ async function createBatch(){
           "Content-Type":"application/json"
         },
         body:JSON.stringify({
-          batch_name:name
-        })
+  batch_name:name,
+  period_mode:periodMode,
+  start_period:
+    startPeriod === "" ? null : Number(startPeriod),
+  end_period:
+    endPeriod === "" ? null : Number(endPeriod)
+})
+          
+        
       });
 
     const data =
