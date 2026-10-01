@@ -399,6 +399,83 @@ await sql`
     }, 500);
   }
 });
+app.get("/api/recognition/jobs", async (c) => {
+  try {
+    const batchId =
+      Number(c.req.query("batch_id") || 0);
+
+    const status =
+      String(c.req.query("status") || "PENDING")
+        .trim()
+        .toUpperCase();
+
+    const limit = Math.min(
+      Math.max(
+        Number(c.req.query("limit") || 50),
+        1
+      ),
+      500
+    );
+
+    let jobs;
+
+    if (batchId) {
+      jobs = await sql`
+        SELECT
+          j.id AS job_id,
+          j.batch_id,
+          j.image_id,
+          j.status,
+          j.attempt_count,
+          j.last_error,
+          j.created_at,
+          i.original_name,
+          i.sha256,
+          i.object_key
+        FROM recognition_jobs j
+        JOIN images i
+          ON i.id = j.image_id
+        WHERE j.batch_id = ${batchId}
+          AND j.status = ${status}
+        ORDER BY j.id ASC
+        LIMIT ${limit}
+      `;
+    } else {
+      jobs = await sql`
+        SELECT
+          j.id AS job_id,
+          j.batch_id,
+          j.image_id,
+          j.status,
+          j.attempt_count,
+          j.last_error,
+          j.created_at,
+          i.original_name,
+          i.sha256,
+          i.object_key
+        FROM recognition_jobs j
+        JOIN images i
+          ON i.id = j.image_id
+        WHERE j.status = ${status}
+        ORDER BY j.id ASC
+        LIMIT ${limit}
+      `;
+    }
+
+    return c.json({
+      ok: true,
+      status,
+      count: jobs.length,
+      jobs
+    });
+
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
 app.get("/api/dashboard", async (c) => {
   try {
     const result = await sql`
