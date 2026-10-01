@@ -126,6 +126,45 @@ pre{
   <pre id="uploadResult"></pre>
 </div>
 <div class="card">
+  <h3>④ 领取识别任务</h3>
+
+  <input
+    id="claimBatchId"
+    type="number"
+    placeholder="输入批次ID，例如：7"
+  >
+
+  <button onclick="claimRecognitionJob()">
+    领取一张待识别图片
+  </button>
+
+  <pre id="claimResult"></pre>
+</div>
+
+<div class="card">
+  <h3>⑤ 系统状态</h3>
+
+  <button onclick="checkHealth()">
+    检查系统
+  </button>
+
+  <pre id="health"></pre>
+</div>
+  
+
+  
+    
+    
+    
+  
+
+  <button onclick="claimRecognitionJob()">
+    领取一张待识别图片
+  </button>
+
+  <pre id="claimResult"></pre>
+</div>
+  <div class="card">
   <h3>④ 系统状态</h3>
 
   <button onclick="checkHealth()">
@@ -264,7 +303,54 @@ async function uploadImages(){
 
   }
 }
-async function loadBatches(){
+async function claimRecognitionJob(){
+
+  const batchId =
+    document.getElementById("claimBatchId")
+      .value.trim();
+
+  const result =
+    document.getElementById("claimResult");
+
+  if(!batchId){
+    result.className="error";
+    result.textContent="请输入批次ID";
+    return;
+  }
+
+  result.className="";
+  result.textContent="正在领取待识别图片...";
+
+  try{
+
+    const response =
+      await fetch(API + "/api/recognition/claim",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          batch_id:Number(batchId)
+        })
+      });
+
+    const data =
+      await response.json();
+
+    result.textContent =
+      JSON.stringify(data,null,2);
+
+    result.className =
+      response.ok ? "ok" : "error";
+
+  }catch(error){
+
+    result.className="error";
+    result.textContent=String(error);
+
+  }
+}
+  async function loadBatches(){
 
   const box =
     document.getElementById("batchList");
