@@ -579,6 +579,111 @@ app.get("/api/recognition/jobs", async (c) => {
     }, 500);
   }
 });
+app.post("/api/recognition/claim", async (c) => {
+  try {
+    let body: any = {};
+
+    try {
+      body = await c.req.json();
+    } catch {
+      body = {};
+    }
+
+    const batchId =
+      Number(body.batch_id || 0);
+
+    let claimed;
+
+    if (batchId) {
+      claimed = await sql`
+        WITH next_job AS (
+          SELECT id
+          FROM recognition_jobs
+          WHERE status = 'PENDING'
+            AND batch_id = ${batchId}
+          ORDER BY id ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE recognition_jobs j
+        SET
+          status = 'PROCESSING',
+          attempt_count = j.attempt_count + 1,
+          started_at = NOW(),
+          last_error = NULL
+        FROM next_job
+        WHERE j.id = next_job.id
+        RETURNING
+          j.id AS job_id,
+          j.batch_id,
+          j.image_id,
+          j.status,
+          j.attempt_count
+      `;
+    } else {
+      claimed = await sql`
+        WITH next_job AS (
+          SELECT id
+          FROM recognition_jobs
+          WHERE status = 'PENDING'
+          ORDER BY id ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE recognition_jobs j
+        SET
+          status = 'PROCESSING',
+          attempt_count = j.attempt_count + 1,
+          started_at = NOW(),
+          last_error = NULL
+        FROM next_job
+        WHERE j.id = next_job.id
+        RETURNING
+          j.id AS job_id,
+          j.batch_id,
+          j.image_id,
+          j.status,
+          j.attempt_count
+      `;
+    }
+
+    if (claimed.length === 0) {
+      return c.json({
+        ok: true,
+        job: null,
+        message: "No pending jobs"
+      });
+    }
+
+    const job = await sql`
+      SELECT
+        j.id AS job_id,
+        j.batch_id,
+        j.image_id,
+        j.status,
+        j.attempt_count,
+        i.original_name,
+        i.sha256,
+        i.object_key
+      FROM recognition_jobs j
+      JOIN images i
+        ON i.id = j.image_id
+      WHERE j.id = ${claimed[0].job_id}
+      LIMIT 1
+    `;
+
+    return c.json({
+      ok: true,
+      job: job[0]
+    });
+
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
 app.get("/api/dashboard", async (c) => {
   try {
     const result = await sql`
