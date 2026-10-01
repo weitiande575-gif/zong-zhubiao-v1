@@ -73,6 +73,40 @@ await sql`
     PRIMARY KEY (batch_id, image_id)
   )
 `;
+  await sql`
+  CREATE TABLE IF NOT EXISTS records (
+    id BIGSERIAL PRIMARY KEY,
+
+    batch_id BIGINT NOT NULL
+      REFERENCES batches(id) ON DELETE CASCADE,
+
+    image_id BIGINT NOT NULL
+      REFERENCES images(id) ON DELETE CASCADE,
+
+    period_no INTEGER,
+
+    category TEXT NOT NULL,
+    subtype TEXT,
+
+    source_name TEXT,
+    source_order INTEGER,
+
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    item_count INTEGER NOT NULL DEFAULT 0,
+
+    raw_text TEXT,
+
+    record_key TEXT,
+
+    confidence NUMERIC(5,4),
+
+    review_status TEXT NOT NULL DEFAULT 'PENDING',
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (batch_id, record_key)
+  )
+`;
   console.log("Database initialized");
 }
 app.get("/", async (c) => {
