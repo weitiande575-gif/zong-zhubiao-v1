@@ -88,9 +88,30 @@ pre{
 
   <pre id="batchList"></pre>
 </div>
-
 <div class="card">
-  <h3>③ 系统状态</h3>
+  <h3>③ 上传图片</h3>
+
+  <input
+    id="uploadBatchId"
+    type="number"
+    placeholder="输入批次ID，例如：6"
+  >
+
+  <input
+    id="imageFiles"
+    type="file"
+    accept="image/*"
+    multiple
+  >
+
+  <button onclick="uploadImages()">
+    上传图片
+  </button>
+
+  <pre id="uploadResult"></pre>
+</div>
+<div class="card">
+  <h3>④ 系统状态</h3>
 
   <button onclick="checkHealth()">
     检查系统
@@ -154,7 +175,66 @@ async function createBatch(){
 
   }
 }
+async function uploadImages(){
 
+  const batchId =
+    document.getElementById("uploadBatchId")
+      .value.trim();
+
+  const files =
+    document.getElementById("imageFiles").files;
+
+  const result =
+    document.getElementById("uploadResult");
+
+  if(!batchId){
+    result.className="error";
+    result.textContent="请输入批次ID";
+    return;
+  }
+
+  if(!files || files.length === 0){
+    result.className="error";
+    result.textContent="请选择图片";
+    return;
+  }
+
+  result.className="";
+  result.textContent=
+    `正在上传 ${files.length} 张图片...`;
+
+  try{
+
+    const formData = new FormData();
+
+    formData.append("batch_id",batchId);
+
+    for(const file of files){
+      formData.append("files",file);
+    }
+
+    const response =
+      await fetch(API + "/api/images/upload",{
+        method:"POST",
+        body:formData
+      });
+
+    const data =
+      await response.json();
+
+    result.textContent =
+      JSON.stringify(data,null,2);
+
+    result.className =
+      response.ok ? "ok" : "error";
+
+  }catch(error){
+
+    result.className="error";
+    result.textContent=String(error);
+
+  }
+}
 async function loadBatches(){
 
   const box =
