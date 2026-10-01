@@ -27,14 +27,21 @@ async function initDatabase() {
 
   console.log("Database initialized");
 }
+app.get("/", async (c) => {
+  const file = Bun.file("public/index.html");
 
-app.get("/", (c) => {
-  return c.json({
-    ok: true,
-    service: "总主表 Master API V1",
-    message: "API is running"
+  if (!(await file.exists())) {
+    return c.text("public/index.html not found", 404);
+  }
+
+  return new Response(file, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8"
+    }
   });
 });
+
+  
 
 app.get("/health", async (c) => {
   try {
