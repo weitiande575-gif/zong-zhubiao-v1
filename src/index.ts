@@ -45,6 +45,12 @@ async function initDatabase() {
     )
   `;
 await sql`
+  ALTER TABLE batches
+  ADD COLUMN IF NOT EXISTS period_mode TEXT NOT NULL DEFAULT 'SINGLE',
+  ADD COLUMN IF NOT EXISTS start_period INTEGER,
+  ADD COLUMN IF NOT EXISTS end_period INTEGER
+`;
+  await sql`
   CREATE TABLE IF NOT EXISTS images (
     id BIGSERIAL PRIMARY KEY,
     sha256 TEXT NOT NULL UNIQUE,
@@ -174,10 +180,17 @@ app.get("/api/batches", async (c) => {
   try {
     const batches = await sql`
       SELECT
-        id,
-        batch_name,
-        status,
-        created_at
+  id,
+  batch_name,
+  period_mode,
+  start_period,
+  end_period,
+  status,
+  created_at
+      
+        
+        
+        
       FROM batches
       ORDER BY id DESC
     `;
@@ -199,7 +212,69 @@ app.post("/api/batches", async (c) => {
     const body = await c.req.json();
     const batchName =
       String(body.batch_name || "").trim();
+const periodMode =
+  String(body.period_mode || "SINGLE")
+    .trim()
+    .toUpperCase();
 
+let startPeriod =
+  body.start_period === undefined ||
+  body.start_period === null ||
+  body.start_period === ""
+    ? null
+    : Number(body.start_period);
+
+let endPeriod =
+  body.end_period === undefined ||
+  body.end_period === null ||
+  body.end_period === ""
+    ? null
+    : Number(body.end_period);
+
+if (!["SINGLE", "RANGE"].includes(periodMode)) {
+  return c.json({
+    ok: false,
+    error: "period_mode must be SINGLE or RANGE"
+  }, 400);
+}
+
+if (
+  startPeriod !== null &&
+  !Number.isInteger(startPeriod)
+) {
+  return c.json({
+    ok: false,
+    error: "start_period must be an integer"
+  }, 400);
+}
+
+if (
+  endPeriod !== null &&
+  !Number.isInteger(endPeriod)
+) {
+  return c.json({
+    ok: false,
+    error: "end_period must be an integer"
+  }, 400);
+}
+
+if (periodMode === "SINGLE" && startPeriod !== null) {
+  endPeriod = startPeriod;
+}
+
+if (
+  periodMode === "RANGE" &&
+  (
+    startPeriod === null ||
+    endPeriod === null ||
+    startPeriod > endPeriod
+  )
+) {
+  return c.json({
+    ok: false,
+    error: "RANGE requires valid start_period and end_period"
+  }, 400);
+}
     if (!batchName) {
       return c.json({
         ok: false,
@@ -209,10 +284,17 @@ app.post("/api/batches", async (c) => {
 
     const existing = await sql`
       SELECT
-        id,
-        batch_name,
-        status,
-        created_at
+  id,
+  batch_name,
+  period_mode,
+  start_period,
+  end_period,
+  status,
+  created_at
+        
+        
+        
+        
       FROM batches
       WHERE batch_name = ${batchName}
       LIMIT 1
@@ -227,14 +309,35 @@ app.post("/api/batches", async (c) => {
     }
 
     const created = await sql`
-      INSERT INTO batches (batch_name)
-      VALUES (${batchName})
-      RETURNING
-        id,
-        batch_name,
-        status,
-        created_at
-    `;
+  INSERT INTO batches (
+    batch_name,
+    period_mode,
+    start_period,
+    end_period
+  )
+  VALUES (
+    ${batchName},
+    ${periodMode},
+    ${startPeriod},
+    ${endPeriod}
+  )
+  RETURNING
+    id,
+    batch_name,
+    period_mode,
+    start_period,
+    end_period,
+    status,
+    created_at
+`;
+      
+      
+      
+      
+        
+      
+        
+    
 
     return c.json({
       ok: true,
