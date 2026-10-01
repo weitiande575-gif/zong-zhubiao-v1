@@ -107,6 +107,30 @@ await sql`
     UNIQUE (batch_id, record_key)
   )
 `;
+await sql`
+  CREATE TABLE IF NOT EXISTS recognition_jobs (
+    id BIGSERIAL PRIMARY KEY,
+
+    batch_id BIGINT NOT NULL
+      REFERENCES batches(id) ON DELETE CASCADE,
+
+    image_id BIGINT NOT NULL
+      REFERENCES images(id) ON DELETE CASCADE,
+
+    status TEXT NOT NULL DEFAULT 'PENDING',
+
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+
+    last_error TEXT,
+
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    UNIQUE (batch_id, image_id)
+  )
+`;
   console.log("Database initialized");
 }
 app.get("/", async (c) => {
