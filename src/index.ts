@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import { serve } from "bun";
 import postgres from "postgres";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 const app = new Hono();
 const PORT = Number(process.env.PORT || 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
-
+const BUCKET_NAME = process.env.BUCKET_NAME;
+const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
+const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const AWS_S3_ENDPOINT_URL = process.env.AWS_S3_ENDPOINT_URL;
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is missing");
 }
@@ -14,7 +18,23 @@ const sql = postgres(DATABASE_URL, {
   ssl: "require",
   max: 5,
 });
+if (
+  !BUCKET_NAME ||
+  !AWS_ACCESS_KEY_ID ||
+  !AWS_SECRET_ACCESS_KEY ||
+  !AWS_S3_ENDPOINT_URL
+) {
+  throw new Error("Bucket configuration is missing");
+}
 
+const s3 = new S3Client({
+  region: "us-east-1",
+  endpoint: AWS_S3_ENDPOINT_URL,
+  credentials: {
+    accessKeyId: AWS_ACCESS_KEY_ID,
+    secretAccessKey: AWS_SECRET_ACCESS_KEY,
+  },
+});
 async function initDatabase() {
   await sql`
     CREATE TABLE IF NOT EXISTS batches (
@@ -24,7 +44,26 @@ async function initDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+await sql`
+  CREATE TABLE IF NOT EXISTS images (
+    id BIGSERIAL PRIMARY KEY,
+    sha256 TEXT NOT NULL UNIQUE,
+    original_name TEXT NOT NULL,
+    object_key TEXT NOT NULL UNIQUE,
+    content_type TEXT,
+    size_bytes BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )
+`;
 
+await sql`
+  CREATE TABLE IF NOT EXISTS batch_images (
+    batch_id BIGINT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
+    image_id BIGINT NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (batch_id, image_id)
+  )
+`;
   console.log("Database initialized");
 }
 app.get("/", async (c) => {
@@ -143,7 +182,144 @@ app.post("/api/batches", async (c) => {
     }, 500);
   }
 });
+app.post("/api/images/upload", async (c) => {
+  try {
+    const form = await c.req.formData();
 
+    const batchId = Number(form.get("batch_id"));
+    const files = form
+      .getAll("files")
+      .filter((item): item is File => item instanceof File);
+
+    if (!batchId) {
+      return c.json({
+        ok: false,
+        error: "batch_id is required"
+      }, 400);
+    }
+
+    if (files.length === 0) {
+      return c.json({
+        ok: false,
+        error: "No images uploaded"
+      }, 400);
+    }
+
+    const batch = await sql`
+      SELECT id, batch_name
+      FROM batches
+      WHERE id = ${batchId}
+      LIMIT 1
+    `;
+
+    if (batch.length === 0) {
+      return c.json({
+        ok: false,
+        error: "Batch not found"
+      }, 404);
+    }
+
+    const results = [];
+
+    for (const file of files) {
+      const buffer = await file.arrayBuffer();
+
+      const hashBuffer = await crypto.subtle.digest(
+        "SHA-256",
+        buffer
+      );
+
+      const sha256 = Array.from(
+        new Uint8Array(hashBuffer)
+      )
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+
+      const existing = await sql`
+        SELECT
+          id,
+          sha256,
+          original_name,
+          object_key
+        FROM images
+        WHERE sha256 = ${sha256}
+        LIMIT 1
+      `;
+
+      let imageId;
+      let duplicate = false;
+
+      if (existing.length > 0) {
+        imageId = existing[0].id;
+        duplicate = true;
+      } else {
+        const objectKey = `images/${sha256}`;
+
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: objectKey,
+            Body: new Uint8Array(buffer),
+            ContentType:
+              file.type || "application/octet-stream",
+          })
+        );
+
+        const created = await sql`
+          INSERT INTO images (
+            sha256,
+            original_name,
+            object_key,
+            content_type,
+            size_bytes
+          )
+          VALUES (
+            ${sha256},
+            ${file.name},
+            ${objectKey},
+            ${file.type || null},
+            ${file.size}
+          )
+          RETURNING id
+        `;
+
+        imageId = created[0].id;
+      }
+
+      await sql`
+        INSERT INTO batch_images (
+          batch_id,
+          image_id
+        )
+        VALUES (
+          ${batchId},
+          ${imageId}
+        )
+        ON CONFLICT DO NOTHING
+      `;
+
+      results.push({
+        file_name: file.name,
+        sha256,
+        image_id: imageId,
+        duplicate
+      });
+    }
+
+    return c.json({
+      ok: true,
+      batch_id: batchId,
+      uploaded_count: files.length,
+      results
+    });
+
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
 app.get("/api/dashboard", async (c) => {
   try {
     const result = await sql`
