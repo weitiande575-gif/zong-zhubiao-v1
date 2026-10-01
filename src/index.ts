@@ -60,6 +60,7 @@ await sql`
   ADD COLUMN IF NOT EXISTS sha256 TEXT,
   ADD COLUMN IF NOT EXISTS original_name TEXT,
   ADD COLUMN IF NOT EXISTS object_key TEXT,
+ ADD COLUMN IF NOT EXISTS bucket_key TEXT,
   ADD COLUMN IF NOT EXISTS content_type TEXT,
   ADD COLUMN IF NOT EXISTS size_bytes BIGINT,
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
@@ -278,12 +279,14 @@ app.post("/api/images/upload", async (c) => {
             sha256,
             original_name,
             object_key,
+           bucket_key,
             content_type,
             size_bytes
           )
           VALUES (
             ${sha256},
-            ${file.name},
+          ${file.name},
+            ${objectKey},
             ${objectKey},
             ${file.type || null},
             ${file.size}
