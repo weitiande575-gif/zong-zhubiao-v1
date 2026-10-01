@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>总主表 V1</title>
+
+<style>
+body{
+  font-family:Arial,sans-serif;
+  background:#f5f6f8;
+  margin:0;
+  padding:16px;
+}
+.box{
+  max-width:600px;
+  margin:auto;
+}
+.header{
+  background:#172333;
+  color:white;
+  padding:22px;
+  border-radius:12px;
+  text-align:center;
+}
+.card{
+  background:white;
+  padding:16px;
+  margin-top:15px;
+  border-radius:12px;
+}
+input,button{
+  width:100%;
+  box-sizing:border-box;
+  padding:13px;
+  margin-top:10px;
+  font-size:16px;
+  border-radius:8px;
+}
+input{
+  border:1px solid #ccc;
+}
+button{
+  border:0;
+  background:#168ad0;
+  color:white;
+  font-weight:bold;
+}
+pre{
+  white-space:pre-wrap;
+  word-break:break-all;
+}
+.ok{color:green;}
+.error{color:red;}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+
+<div class="header">
+  <h2>🎯 总主表</h2>
+  <div>Master API V1</div>
+</div>
+
+<div class="card">
+  <h3>① 创建批次</h3>
+
+  <input
+    id="batchName"
+    placeholder="例如：271期测试"
+  >
+
+  <button onclick="createBatch()">
+    创建批次
+  </button>
+
+  <pre id="createResult"></pre>
+</div>
+
+<div class="card">
+  <h3>② 当前批次</h3>
+
+  <button onclick="loadBatches()">
+    刷新批次
+  </button>
+
+  <pre id="batchList"></pre>
+</div>
+
+<div class="card">
+  <h3>③ 系统状态</h3>
+
+  <button onclick="checkHealth()">
+    检查系统
+  </button>
+
+  <pre id="health"></pre>
+</div>
+
+</div>
+
+<script>
+
+const API =
+"https://master-api-v1-fixed-production.up.railway.app";
+
+async function createBatch(){
+
+  const name =
+    document.getElementById("batchName")
+      .value.trim();
+
+  const result =
+    document.getElementById("createResult");
+
+  if(!name){
+    result.textContent="请输入批次名称";
+    return;
+  }
+
+  result.textContent="正在创建...";
+
+  try{
+
+    const response =
+      await fetch(API + "/api/batches",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify({
+          batch_name:name
+        })
+      });
+
+    const data =
+      await response.json();
+
+    result.textContent =
+      JSON.stringify(data,null,2);
+
+    result.className =
+      response.ok ? "ok" : "error";
+
+    if(response.ok){
+      await loadBatches();
+    }
+
+  }catch(error){
+
+    result.className="error";
+    result.textContent=String(error);
+
+  }
+}
+
+async function loadBatches(){
+
+  const box =
+    document.getElementById("batchList");
+
+  box.textContent="正在读取...";
+
+  try{
+
+    const response =
+      await fetch(API + "/api/batches");
+
+    const data =
+      await response.json();
+
+    box.textContent =
+      JSON.stringify(data,null,2);
+
+  }catch(error){
+
+    box.textContent=String(error);
+
+  }
+}
+
+async function checkHealth(){
+
+  const box =
+    document.getElementById("health");
+
+  box.textContent="正在检查...";
+
+  try{
+
+    const response =
+      await fetch(API + "/health");
+
+    const data =
+      await response.json();
+
+    box.textContent =
+      JSON.stringify(data,null,2);
+
+    box.className =
+      data.ok ? "ok" : "error";
+
+  }catch(error){
+
+    box.className="error";
+    box.textContent=String(error);
+
+  }
+}
+
+loadBatches();
+checkHealth();
+
+</script>
+
+</body>
+</html>
