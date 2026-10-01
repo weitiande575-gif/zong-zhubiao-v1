@@ -55,7 +55,15 @@ await sql`
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )
 `;
-
+await sql`
+  ALTER TABLE images
+  ADD COLUMN IF NOT EXISTS sha256 TEXT,
+  ADD COLUMN IF NOT EXISTS original_name TEXT,
+  ADD COLUMN IF NOT EXISTS object_key TEXT,
+  ADD COLUMN IF NOT EXISTS content_type TEXT,
+  ADD COLUMN IF NOT EXISTS size_bytes BIGINT,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW()
+`;
 await sql`
   CREATE TABLE IF NOT EXISTS batch_images (
     batch_id BIGINT NOT NULL REFERENCES batches(id) ON DELETE CASCADE,
