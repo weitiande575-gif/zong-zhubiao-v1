@@ -366,7 +366,17 @@ app.post("/api/images/upload", async (c) => {
         )
         ON CONFLICT DO NOTHING
       `;
-
+await sql`
+  INSERT INTO recognition_jobs (
+    batch_id,
+    image_id
+  )
+  VALUES (
+    ${batchId},
+    ${imageId}
+  )
+  ON CONFLICT DO NOTHING
+`;
       results.push({
         file_name: file.name,
         sha256,
