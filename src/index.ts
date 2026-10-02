@@ -1555,13 +1555,13 @@ app.get("/api/recognition/records-by-category", async (c) => {
 });
 app.get("/api/recognition/liuxiao-summary", async (c) => {
   try {
-    const imageId = Number(c.req.query("image_id") || 0);
+     
     const periodNo = Number(c.req.query("period_no") || 0);
 
-    if (!imageId || !periodNo) {
+    if (!periodNo) {
       return c.json({
         ok: false,
-        error: "image_id and period_no are required"
+        error: "period_no is required"
       }, 400);
     }
 
@@ -1573,8 +1573,8 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
         items,
         raw_text
       FROM records
-      WHERE image_id = ${imageId}
-        AND period_no = ${periodNo}
+      
+        WHERE period_no = ${periodNo}
         AND category = '六肖'
       ORDER BY source_order ASC, id ASC
     `;
@@ -1647,7 +1647,7 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
 
     return c.json({
       ok: true,
-      image_id: imageId,
+      
 period_no: periodNo,
 category: "六肖",
 group_count: rows.length,
