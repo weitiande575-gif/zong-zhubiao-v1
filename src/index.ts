@@ -220,7 +220,7 @@ async function analyzeImageWithOpenAI(
         
       
     
-  );
+  
 
   const data = await response.json();
 
