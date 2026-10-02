@@ -1420,13 +1420,43 @@ const actual = Array.isArray(parsedItems)
     const validRows = results.filter(
       (row: any) => row.valid === true
     );
+const periodSummary = Array.from(
+  new Set(results.map((row: any) => row.period_no))
+)
+  .sort((a: any, b: any) => a - b)
+  .map((periodNo: any) => {
+    const periodRows = results.filter(
+      (row: any) => row.period_no === periodNo
+    );
 
+    const validPeriodRows = periodRows.filter(
+      (row: any) => row.valid === true
+    );
+
+    return {
+      period_no: periodNo,
+      total_versions: periodRows.length,
+      valid_versions: validPeriodRows.length,
+      valid_ids: validPeriodRows.map(
+        (row: any) => row.id
+      )
+    };
+  });
+
+const missingPeriods = periodSummary.filter(
+  (row: any) => row.valid_versions === 0
+);
     return c.json({
       ok: true,
       image_id: imageId,
       checked_count: results.length,
       valid_count: validRows.length,
       invalid_count: results.length - validRows.length,
+     periods_total: periodSummary.length,
+periods_with_valid: periodSummary.length - missingPeriods.length,
+periods_missing_valid: missingPeriods.length,
+period_summary: periodSummary,
+missing_periods: missingPeriods,
       results
     });
   } catch (error) {
