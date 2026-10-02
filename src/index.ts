@@ -2259,6 +2259,121 @@ app.get("/upload", (c) => {
 </html>
   `);
 });
+app.get("/liuxiao", async (c) => {
+  const periodNo = Number(c.req.query("period_no") || 0);
+
+  if (!periodNo) {
+    return c.html(`
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>六肖统计</title>
+        </head>
+        <body style="font-family:sans-serif;padding:20px">
+          <h2>六肖统计</h2>
+          <form method="get">
+            <input
+              name="period_no"
+              type="number"
+              placeholder="输入期数，例如275"
+              style="font-size:20px;padding:10px"
+            >
+            <button
+              type="submit"
+              style="font-size:20px;padding:10px"
+            >
+              查询
+            </button>
+          </form>
+        </body>
+      </html>
+    `);
+  }
+
+  const url = new URL(c.req.url);
+  url.pathname = "/api/recognition/liuxiao-summary";
+  url.search = `?period_no=${periodNo}`;
+
+  const response = await fetch(url.toString());
+  const data: any = await response.json();
+
+  if (!data.ok) {
+    return c.html(`<h2>查询失败：${data.error || "未知错误"}</h2>`);
+  }
+
+  const rankingHtml = (data.ranking || [])
+    .map(
+      (row: any) =>
+        `<tr>
+          <td>${row.rank}</td>
+          <td>${row.zodiac}</td>
+          <td>${row.count}</td>
+        </tr>`
+    )
+    .join("");
+
+  const duplicateHtml = (data.duplicates || [])
+    .map(
+      (row: any) =>
+        `<li>
+          ID ${row.id} ｜ ${row.source_name || "未知来源"}
+          ｜第${row.source_order || 0}组
+          ｜${Array.isArray(row.items) ? row.items.join("、") : row.items}
+        </li>`
+    )
+    .join("");
+
+  return c.html(`
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>第${periodNo}期六肖统计</title>
+      </head>
+
+      <body style="font-family:sans-serif;padding:20px;line-height:1.7">
+        <h2>第${periodNo}期 · 六肖统计</h2>
+
+        <p>
+          原始组数：${data.raw_group_count}<br>
+          重复组数：${data.duplicate_count}<br>
+          有效组数：${data.group_count}<br>
+          有效格数：${data.total_cells}<br>
+          校验：${data.cells_valid ? "通过" : "异常"}
+        </p>
+
+        <h3>竞争排名</h3>
+
+        <table border="1" cellpadding="8" cellspacing="0">
+          <tr>
+            <th>名次</th>
+            <th>生肖</th>
+            <th>次数</th>
+          </tr>
+          ${rankingHtml}
+        </table>
+
+        <h3>重复资料</h3>
+        <ul>
+          ${duplicateHtml || "<li>无重复资料</li>"}
+        </ul>
+
+        <hr>
+
+        <form method="get">
+          <input
+            name="period_no"
+            type="number"
+            placeholder="输入其他期数"
+            style="font-size:18px;padding:8px"
+          >
+          <button type="submit" style="font-size:18px;padding:8px">
+            查询
+          </button>
+        </form>
+      </body>
+    </html>
+  `);
+});
 await initDatabase();
 
 serve({
