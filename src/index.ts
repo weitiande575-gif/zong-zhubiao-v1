@@ -1457,7 +1457,14 @@ ORDER BY period_no ASC, source_order ASC, id ASC
       app.get("/api/recognition/validate-tail", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
+const category = String(c.req.query("category") || "八尾");
 
+if (!["八尾", "七尾", "六尾"].includes(category)) {
+  return c.json({
+    ok: false,
+    error: "category must be 八尾, 七尾 or 六尾"
+  }, 400);
+}
     if (!imageId) {
       return c.json({
         ok: false,
@@ -1478,7 +1485,7 @@ ORDER BY period_no ASC, source_order ASC, id ASC
         created_at
       FROM records
       WHERE image_id = ${imageId}
-        AND category = '八尾'
+        AND category = ${category}
       ORDER BY period_no ASC, id ASC
     `;
 
