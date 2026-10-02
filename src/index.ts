@@ -971,6 +971,7 @@ app.get("/api/recognition/analyze", async (c) => {
       SELECT
         j.id AS job_id,
         j.image_id,
+        j.batch_id,
         i.original_name,
         i.object_key,
         i.content_type
