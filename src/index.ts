@@ -1332,7 +1332,98 @@ ORDER BY period_no ASC, source_order ASC, id ASC
     }, 500);
   }
 });
-      
+      app.get("/api/recognition/validate-tail", async (c) => {
+  try {
+    const imageId = Number(c.req.query("image_id") || 0);
+
+    if (!imageId) {
+      return c.json({
+        ok: false,
+        error: "image_id is required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        id,
+        period_no,
+        category,
+        source_name,
+        items,
+        item_count,
+        raw_text,
+        review_status,
+        created_at
+      FROM records
+      WHERE image_id = ${imageId}
+        AND category = '八尾'
+      ORDER BY period_no ASC, id ASC
+    `;
+
+    const allTails = ["0","1","2","3","4","5","6","7","8","9"];
+
+    const results = rows.map((row: any) => {
+      const rawText = String(row.raw_text || "");
+
+      const match = rawText.match(
+        /(?:期)?\s*[\(（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[\)）]/
+      );
+
+      if (!match) {
+        return {
+          id: row.id,
+          period_no: row.period_no,
+          raw_text: rawText,
+          items: row.items,
+          status: "UNABLE_TO_PARSE"
+        };
+      }
+
+      const killed = [match[1], match[2]]
+        .sort();
+
+      const expected = allTails.filter(
+        (tail) => !killed.includes(tail)
+      );
+
+      const actual = Array.isArray(row.items)
+        ? row.items.map(String).sort()
+        : [];
+
+      const valid =
+        actual.length === 8 &&
+        JSON.stringify(actual) === JSON.stringify(expected);
+
+      return {
+        id: row.id,
+        period_no: row.period_no,
+        raw_text: rawText,
+        killed,
+        expected,
+        actual,
+        valid
+      };
+    });
+
+    const validRows = results.filter(
+      (row: any) => row.valid === true
+    );
+
+    return c.json({
+      ok: true,
+      image_id: imageId,
+      checked_count: results.length,
+      valid_count: validRows.length,
+      invalid_count: results.length - validRows.length,
+      results
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
        
       
     
