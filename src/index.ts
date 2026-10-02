@@ -359,12 +359,12 @@ if (
     
   
 
-  return {
-    supported: false,
-    valid: false,
-    reason: "CATEGORY_NOT_SUPPORTED"
-  };
-}
+  
+    
+    
+    
+  
+
 async function initDatabase() {
   await sql`
     CREATE TABLE IF NOT EXISTS batches (
