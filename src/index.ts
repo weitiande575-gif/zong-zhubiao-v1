@@ -1285,7 +1285,53 @@ ORDER BY period_no ASC, source_order ASC, id ASC
     }, 500);
   }
 });
-      
+      app.get("/api/recognition/records-summary", async (c) => {
+  try {
+    const imageId = Number(c.req.query("image_id") || 0);
+
+    if (!imageId) {
+      return c.json({
+        ok: false,
+        error: "image_id is required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        period_no,
+        COUNT(*)::int AS record_count,
+        json_agg(
+          json_build_object(
+            'id', id,
+            'category', category,
+            'source_name', source_name,
+            'items', items,
+            'item_count', item_count,
+            'raw_text', raw_text,
+            'review_status', review_status,
+            'created_at', created_at
+          )
+          ORDER BY id
+        ) AS versions
+      FROM records
+      WHERE image_id = ${imageId}
+      GROUP BY period_no
+      ORDER BY period_no ASC
+    `;
+
+    return c.json({
+      ok: true,
+      image_id: imageId,
+      periods_count: rows.length,
+      periods: rows
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
       
        
       
