@@ -1354,7 +1354,7 @@ const runRecognitionJob = async (c: any) => {
   }
 };
       app.get("/api/recognition/analyze", runRecognitionJob);
-     app.get("/api/recognition/start", async (c) => {
+    app.get("/api/recognition/start", async (c) => {
   const jobId = Number(c.req.query("job_id") || 0);
 
   if (!jobId) {
@@ -1364,11 +1364,9 @@ const runRecognitionJob = async (c: any) => {
     }, 400);
   }
 
-  const url = new URL(c.req.url);
-  url.pathname = "/api/recognition/analyze";
-  url.search = `?job_id=${jobId}`;
-
-  void fetch(url.toString()).catch((error) => {
+  // 直接在当前服务内部运行识别，
+  // 不再通过 HTTP 请求 /api/recognition/analyze
+  void runRecognitionJob(c).catch((error) => {
     console.error("Background recognition failed:", error);
   });
 
@@ -1377,7 +1375,30 @@ const runRecognitionJob = async (c: any) => {
     job_id: jobId,
     status: "STARTED"
   });
-}); 
+});
+  
+
+  
+    
+      
+      
+  
+  
+
+  
+  
+  
+
+  
+    
+  
+
+  
+    
+    
+    
+  
+
       app.get("/api/recognition/records", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
