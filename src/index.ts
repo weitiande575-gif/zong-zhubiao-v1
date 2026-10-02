@@ -1446,6 +1446,25 @@ const periodSummary = Array.from(
 const missingPeriods = periodSummary.filter(
   (row: any) => row.valid_versions === 0
 );
+   const keepPlan = periodSummary.map((row: any) => {
+  const sortedValidIds = [...row.valid_ids]
+    .map(Number)
+    .sort((a: number, b: number) => a - b);
+
+  return {
+    period_no: row.period_no,
+    keep_id: sortedValidIds[0] ?? null,
+    valid_ids: sortedValidIds
+  };
+});
+
+const keepIds = keepPlan
+  .map((row: any) => row.keep_id)
+  .filter((id: any) => id !== null);
+
+const deleteIds = results
+  .map((row: any) => Number(row.id))
+  .filter((id: number) => !keepIds.includes(id));
     return c.json({
       ok: true,
       image_id: imageId,
@@ -1457,6 +1476,11 @@ periods_with_valid: periodSummary.length - missingPeriods.length,
 periods_missing_valid: missingPeriods.length,
 period_summary: periodSummary,
 missing_periods: missingPeriods,
+     keep_count: keepIds.length,
+delete_count: deleteIds.length,
+keep_plan: keepPlan,
+keep_ids: keepIds,
+delete_ids: deleteIds,
       results
     });
   } catch (error) {
