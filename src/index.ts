@@ -1621,6 +1621,182 @@ delete_ids: deleteIds,
     }, 500);
   }
 });
+      app.get("/api/recognition/cleanup-tail", async (c) => {
+  try {
+    const imageId = Number(c.req.query("image_id") || 0);
+    const confirm = String(c.req.query("confirm") || "");
+
+    if (imageId !== 2) {
+      return c.json({
+        ok: false,
+        error: "cleanup only allows image_id=2"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        id,
+        period_no,
+        items,
+        raw_text
+      FROM records
+      WHERE image_id = ${imageId}
+        AND category = '八尾'
+      ORDER BY period_no ASC, id ASC
+    `;
+
+    const allTails = [
+      "0","1","2","3","4",
+      "5","6","7","8","9"
+    ];
+
+    const checked = rows.map((row: any) => {
+      const rawText = String(row.raw_text || "");
+
+      const match = rawText.match(
+        /(?:期)?\s*[（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[）]/
+      );
+
+      if (!match) {
+        return {
+          id: Number(row.id),
+          period_no: row.period_no,
+          valid: false
+        };
+      }
+
+      const killed = [match[1], match[2]].sort();
+
+      const expected = allTails.filter(
+        (tail) => !killed.includes(tail)
+      );
+
+      let parsedItems: any = row.items;
+
+      if (typeof parsedItems === "string") {
+        try {
+          parsedItems = JSON.parse(parsedItems);
+        } catch {
+          parsedItems = [];
+        }
+      }
+
+      const actual = Array.isArray(parsedItems)
+        ? parsedItems.map(String).sort()
+        : [];
+
+      const valid =
+        actual.length === 8 &&
+        JSON.stringify(actual) === JSON.stringify(expected);
+
+      return {
+        id: Number(row.id),
+        period_no: row.period_no,
+        valid
+      };
+    });
+
+    const periods = Array.from(
+      new Set(checked.map((row: any) => row.period_no))
+    ).sort((a: any, b: any) => a - b);
+
+    const keepPlan = periods.map((periodNo: any) => {
+      const validRows = checked
+        .filter(
+          (row: any) =>
+            row.period_no === periodNo &&
+            row.valid === true
+        )
+        .sort((a: any, b: any) => a.id - b.id);
+
+      return {
+        period_no: periodNo,
+        keep_id: validRows[0]?.id ?? null
+      };
+    });
+
+    const missingPeriods = keepPlan.filter(
+      (row: any) => row.keep_id === null
+    );
+
+    const keepIds = keepPlan
+      .map((row: any) => row.keep_id)
+      .filter((id: any) => id !== null);
+
+    const deleteIds = checked
+      .map((row: any) => row.id)
+      .filter((id: number) => !keepIds.includes(id));
+
+    const expectedKeepIds = Array.from(
+      { length: 24 },
+      (_, index) => index + 1
+    );
+
+    const safe =
+      checked.length === 74 &&
+      periods.length === 24 &&
+      missingPeriods.length === 0 &&
+      keepIds.length === 24 &&
+      deleteIds.length === 50 &&
+      JSON.stringify(keepIds) === JSON.stringify(expectedKeepIds);
+
+    if (!safe) {
+      return c.json({
+        ok: false,
+        error: "SAFETY_CHECK_FAILED",
+        checked_count: checked.length,
+        periods_total: periods.length,
+        periods_missing_valid: missingPeriods.length,
+        keep_count: keepIds.length,
+        delete_count: deleteIds.length,
+        keep_ids: keepIds
+      }, 409);
+    }
+
+    if (confirm !== "DELETE_50_KEEP_24") {
+      return c.json({
+        ok: true,
+        ready: true,
+        executed: false,
+        checked_count: 74,
+        periods_total: 24,
+        keep_count: 24,
+        delete_count: 50,
+        keep_ids: keepIds,
+        message: "Confirmation required"
+      });
+    }
+
+    const deleted = await sql`
+      DELETE FROM records
+      WHERE image_id = ${imageId}
+        AND category = '八尾'
+        AND id > 24
+      RETURNING id
+    `;
+
+    const remaining = await sql`
+      SELECT id, period_no
+      FROM records
+      WHERE image_id = ${imageId}
+        AND category = '八尾'
+      ORDER BY id ASC
+    `;
+
+    return c.json({
+  ok: true,
+  executed: true,
+  deleted_count: deleted.length,
+  remaining_count: remaining.length,
+  remaining
+});
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
       
     
 
