@@ -2044,7 +2044,57 @@ app.get("/api/dashboard", async (c) => {
     }, 500);
   }
 });
+app.get("/upload", (c) => {
+  return c.html(`
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>总主表图片上传</title>
+</head>
+<body style="font-family:sans-serif;padding:24px;max-width:600px;margin:auto">
+  <h2>总主表图片上传</h2>
 
+  <form action="/api/images/upload" method="post" enctype="multipart/form-data">
+    <p>
+      <label>批次 ID：</label><br>
+      <input
+        type="number"
+        name="batch_id"
+        value="7"
+        required
+        style="font-size:18px;padding:8px;width:100%"
+      >
+    </p>
+
+    <p>
+      <label>选择图片：</label><br><br>
+      <input
+        type="file"
+        name="files"
+        accept="image/*"
+        multiple
+        required
+        style="font-size:18px"
+      >
+    </p>
+
+    <button
+      type="submit"
+      style="font-size:20px;padding:12px 24px"
+    >
+      上传图片
+    </button>
+  </form>
+
+  <p style="margin-top:25px">
+    上传成功后会返回 image_id，并自动建立识别任务。
+  </p>
+</body>
+</html>
+  `);
+});
 await initDatabase();
 
 serve({
