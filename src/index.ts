@@ -1666,6 +1666,8 @@ const uniqueRows = rows.filter((row: any) => {
       
 period_no: periodNo,
 category: "六肖",
+      raw_group_count: rows.length,
+duplicate_count: rows.length - uniqueRows.length,
  group_count: uniqueRows.length,
 total_cells: totalCells,
  expected_cells: uniqueRows.length * 6,
