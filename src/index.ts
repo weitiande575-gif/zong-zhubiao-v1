@@ -727,6 +727,7 @@ app.post("/api/images/upload", async (c) => {
     const form = await c.req.formData();
 
     const batchId = Number(form.get("batch_id"));
+    const periodNo = Number(form.get("period_no") || 0);
     const files = form
       .getAll("files")
       .filter((item): item is File => item instanceof File);
@@ -737,7 +738,13 @@ app.post("/api/images/upload", async (c) => {
         error: "batch_id is required"
       }, 400);
     }
-
+    
+if (!periodNo) {
+  return c.json({
+    ok: false,
+    error: "period_no is required"
+  }, 400);
+}
     if (files.length === 0) {
       return c.json({
         ok: false,
@@ -2230,7 +2237,23 @@ app.get("/upload", (c) => {
         required
         style="font-size:18px;padding:8px;width:100%"
       >
-    </p>
+      </p>
+    <p>
+  <label>期数：</label><br>
+  <input
+    type="number"
+    name="period_no"
+    placeholder="例如 275"
+    required
+    style="font-size:18px;padding:8px"
+  >
+</p>
+    
+
+
+
+
+
 
     <p>
       <label>选择图片：</label><br><br>
