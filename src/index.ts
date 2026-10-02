@@ -1652,10 +1652,12 @@ delete_ids: deleteIds,
 
     const checked = rows.map((row: any) => {
       const rawText = String(row.raw_text || "");
-
-      const match = rawText.match(
-        /(?:期)?\s*[（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[）]/
-      );
+const match = rawText.match(
+  /(?:期)?\s*[\(（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[\)）]/
+);
+      
+        
+      
 
       if (!match) {
         return {
