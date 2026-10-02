@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "bun";
 import postgres from "postgres";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 
 const app = new Hono();
 const PORT = Number(process.env.PORT || 3000);
@@ -675,6 +675,79 @@ app.post("/api/recognition/claim", async (c) => {
     return c.json({
       ok: true,
       job: job[0]
+    });
+
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
+app.get("/api/recognition/image", async (c) => {
+  try {
+    const jobId =
+      Number(c.req.query("job_id") || 0);
+
+    if (!jobId) {
+      return c.json({
+        ok: false,
+        error: "job_id is required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        j.id AS job_id,
+        j.image_id,
+        i.original_name,
+        i.object_key,
+        i.content_type
+      FROM recognition_jobs j
+      JOIN images i
+        ON i.id = j.image_id
+      WHERE j.id = ${jobId}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      return c.json({
+        ok: false,
+        error: "Job not found"
+      }, 404);
+    }
+
+    const image = rows[0];
+
+    const object = await s3.send(
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: image.object_key
+      })
+    );
+
+    if (!object.Body) {
+      return c.json({
+        ok: false,
+        error: "Image body is empty"
+      }, 404);
+    }
+
+    const bytes =
+      await object.Body.transformToByteArray();
+
+    return new Response(bytes, {
+      headers: {
+        "Content-Type":
+          object.ContentType ||
+          image.content_type ||
+          "application/octet-stream",
+
+        "Content-Disposition":
+          `inline; filename="${image.original_name}"`,
+
+        "Cache-Control": "no-store"
+      }
     });
 
   } catch (error) {
