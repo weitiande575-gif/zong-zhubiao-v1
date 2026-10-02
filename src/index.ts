@@ -1361,7 +1361,7 @@ const runRecognitionJob = async (c: any) => {
       app.get("/api/recognition/records", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
-
+const category = String(c.req.query("category") || "").trim();
     if (!imageId) {
       return c.json({
         ok: false,
@@ -1389,7 +1389,9 @@ const runRecognitionJob = async (c: any) => {
       
       
   FROM records
+
 WHERE image_id = ${imageId}
+AND (${category} = '' OR category = ${category})
 ORDER BY period_no ASC, source_order ASC, id ASC
       
     `;
@@ -1410,6 +1412,7 @@ ORDER BY period_no ASC, source_order ASC, id ASC
       app.get("/api/recognition/records-summary", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
+
 
     if (!imageId) {
       return c.json({
