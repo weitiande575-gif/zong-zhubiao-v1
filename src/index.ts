@@ -1408,7 +1408,53 @@ ORDER BY period_no ASC, source_order ASC, id ASC
       error: String(error)
     }, 500);
   }
+app.get("/api/recognition/records-by-category", async (c) => {
+  try {
+    const category = String(c.req.query("category") || "").trim();
+
+    if (!category) {
+      return c.json({
+        ok: false,
+        error: "category is required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        id,
+        batch_id,
+        image_id,
+        period_no,
+        category,
+        subtype,
+        source_name,
+        source_order,
+        items,
+        item_count,
+        raw_text,
+        record_key,
+        confidence,
+        review_status,
+        created_at
+      FROM records
+      WHERE category = ${category}
+      ORDER BY image_id ASC, period_no ASC, source_order ASC, id ASC
+    `;
+
+    return c.json({
+      ok: true,
+      category,
+      count: rows.length,
+      records: rows
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
 });
+      });
       app.get("/api/recognition/records-summary", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
