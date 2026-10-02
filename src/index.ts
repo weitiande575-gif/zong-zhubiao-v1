@@ -1578,6 +1578,22 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
         AND category = '六肖'
       ORDER BY source_order ASC, id ASC
     `;
+    const seen = new Set<string>();
+
+const uniqueRows = rows.filter((row: any) => {
+  const key = [
+    String(row.source_name || "").trim(),
+    Number(row.source_order || 0),
+    JSON.stringify(row.items)
+  ].join("|");
+
+  if (seen.has(key)) {
+    return false;
+  }
+
+  seen.add(key);
+  return true;
+});
 
     const zodiacOrder = [
       "鼠", "牛", "虎", "兔", "龙", "蛇",
@@ -1591,7 +1607,7 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
 
     let totalCells = 0;
 
-    for (const row of rows) {
+    for (const row of uniqueRows) {
       let items = row.items;
 
       if (typeof items === "string") {
@@ -1650,13 +1666,13 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
       
 period_no: periodNo,
 category: "六肖",
-group_count: rows.length,
+ group_count: uniqueRows.length,
 total_cells: totalCells,
-expected_cells: rows.length * 6,
-cells_valid: totalCells === rows.length * 6,
+ expected_cells: uniqueRows.length * 6,
+cells_valid: totalCells === uniqueRows.length * 6,
 counts,
 ranking: competitionRanking,
-groups: rows
+groups: uniqueRows
 });
 } catch (error) {
   return c.json({
