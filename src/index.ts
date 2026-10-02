@@ -1386,9 +1386,21 @@ ORDER BY period_no ASC, source_order ASC, id ASC
         (tail) => !killed.includes(tail)
       );
 
-      const actual = Array.isArray(row.items)
-        ? row.items.map(String).sort()
-        : [];
+      let parsedItems: any = row.items;
+
+if (typeof parsedItems === "string") {
+  try {
+    parsedItems = JSON.parse(parsedItems);
+  } catch {
+    parsedItems = [];
+  }
+}
+
+const actual = Array.isArray(parsedItems)
+  ? parsedItems.map(String).sort()
+  : [];
+        
+        
 
       const valid =
         actual.length === 8 &&
