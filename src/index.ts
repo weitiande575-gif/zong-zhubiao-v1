@@ -1236,7 +1236,52 @@ const runRecognitionJob = async (c: any) => {
     status: "STARTED"
   });
 }); 
-      
+      app.get("/api/recognition/records", async (c) => {
+  try {
+    const imageId = Number(c.req.query("image_id") || 0);
+
+    if (!imageId) {
+      return c.json({
+        ok: false,
+        error: "image_id is required"
+      }, 400);
+    }
+
+    const records = await sql`
+      SELECT
+        id,
+        batch_id,
+        image_id,
+        period_no,
+        category,
+        subtype,
+        source_name,
+        source_order,
+        items,
+        item_count,
+        raw_text,
+        record_key,
+        confidence,
+        review_status,
+        created_at
+      FROM records
+      WHERE image_id = ${imageId}
+      ORDER BY period_no ASC, source_order ASC, id ASC
+    `;
+
+    return c.json({
+      ok: true,
+      image_id: imageId,
+      count: records.length,
+      records
+    });
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
       
       
        
