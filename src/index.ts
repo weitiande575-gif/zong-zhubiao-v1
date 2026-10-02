@@ -985,7 +985,7 @@ app.get("/api/recognition/image", async (c) => {
     }, 500);
   }
 });
-app.get("/api/recognition/analyze", async (c) => {
+const runRecognitionJob = async (c: any) => {
   try {
     const jobId =
       Number(c.req.query("job_id") || 0);
@@ -1210,9 +1210,32 @@ app.get("/api/recognition/analyze", async (c) => {
       error: String(error)
     }, 500);
   }
-});
-      
-      
+};
+      app.get("/api/recognition/analyze", runRecognitionJob);
+     app.get("/api/recognition/start", async (c) => {
+  const jobId = Number(c.req.query("job_id") || 0);
+
+  if (!jobId) {
+    return c.json({
+      ok: false,
+      error: "job_id is required"
+    }, 400);
+  }
+
+  const url = new URL(c.req.url);
+  url.pathname = "/api/recognition/analyze";
+  url.search = `?job_id=${jobId}`;
+
+  void fetch(url.toString()).catch((error) => {
+    console.error("Background recognition failed:", error);
+  });
+
+  return c.json({
+    ok: true,
+    job_id: jobId,
+    status: "STARTED"
+  });
+}); 
       
       
       
