@@ -1409,6 +1409,7 @@ const runRecognitionJob = async (c: any) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
 const category = String(c.req.query("category") || "").trim();
+    const periodNo = Number(c.req.query("period_no") || 0);
     if (!imageId) {
       return c.json({
         ok: false,
@@ -1439,6 +1440,7 @@ const category = String(c.req.query("category") || "").trim();
 
 WHERE image_id = ${imageId}
 AND (${category} = '' OR category = ${category})
+AND (${periodNo} = 0 OR period_no = ${periodNo})
 ORDER BY period_no ASC, source_order ASC, id ASC
       
     `;
