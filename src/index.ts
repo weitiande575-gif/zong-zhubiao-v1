@@ -1579,6 +1579,7 @@ app.get("/api/recognition/liuxiao-summary", async (c) => {
       ORDER BY source_order ASC, id ASC
     `;
     const seen = new Set<string>();
+    const duplicateRows: any[] = [];
 
 const uniqueRows = rows.filter((row: any) => {
   const key = [
@@ -1586,9 +1587,12 @@ const uniqueRows = rows.filter((row: any) => {
     Number(row.source_order || 0),
     JSON.stringify(row.items)
   ].join("|");
-
-  if (seen.has(key)) {
-    return false;
+if (seen.has(key)) {
+  duplicateRows.push(row);
+  return false;
+}
+  
+    
   }
 
   seen.add(key);
@@ -1668,6 +1672,7 @@ period_no: periodNo,
 category: "六肖",
       raw_group_count: rows.length,
 duplicate_count: rows.length - uniqueRows.length,
+      duplicates: duplicateRows,
  group_count: uniqueRows.length,
 total_cells: totalCells,
  expected_cells: uniqueRows.length * 6,
