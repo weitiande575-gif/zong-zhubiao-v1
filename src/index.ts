@@ -909,6 +909,7 @@ app.get("/api/recognition/jobs", async (c) => {
           j.id AS job_id,
           j.batch_id,
           j.image_id,
+          j.period_no,
           j.status,
           j.attempt_count,
           j.last_error,
@@ -930,6 +931,7 @@ app.get("/api/recognition/jobs", async (c) => {
           j.id AS job_id,
           j.batch_id,
           j.image_id,
+          j.period_no,
           j.status,
           j.attempt_count,
           j.last_error,
@@ -998,6 +1000,7 @@ app.post("/api/recognition/claim", async (c) => {
           j.id AS job_id,
           j.batch_id,
           j.image_id,
+          j.period_no,
           j.status,
           j.attempt_count
       `;
@@ -1023,6 +1026,7 @@ app.post("/api/recognition/claim", async (c) => {
           j.id AS job_id,
           j.batch_id,
           j.image_id,
+          j.period_no,
           j.status,
           j.attempt_count
       `;
