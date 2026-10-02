@@ -243,6 +243,68 @@ async function analyzeImageWithOpenAI(
 
   return data;
 }
+function validateRecognitionRecord(row: any) {
+  const category = String(row.category || "");
+  const rawText = String(row.raw_text || "");
+
+  let parsedItems: any = row.items;
+
+  if (typeof parsedItems === "string") {
+    try {
+      parsedItems = JSON.parse(parsedItems);
+    } catch {
+      parsedItems = [];
+    }
+  }
+
+  const actual = Array.isArray(parsedItems)
+    ? parsedItems.map(String)
+    : [];
+
+  if (category === "八尾") {
+    const allTails = [
+      "0","1","2","3","4",
+      "5","6","7","8","9"
+    ];
+
+    const match = rawText.match(
+      /(?:期)?\s*[\(（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[\)）]/
+    );
+
+    if (!match) {
+      return {
+        supported: true,
+        valid: false,
+        reason: "TAIL_EXCLUSION_NOT_FOUND"
+      };
+    }
+
+    const killed = [match[1], match[2]].sort();
+
+    const expected = allTails
+      .filter((tail) => !killed.includes(tail))
+      .sort();
+
+    const normalizedActual = actual.sort();
+
+    return {
+      supported: true,
+      valid:
+        normalizedActual.length === 8 &&
+        JSON.stringify(normalizedActual) ===
+          JSON.stringify(expected),
+      expected,
+      actual: normalizedActual,
+      excluded: killed
+    };
+  }
+
+  return {
+    supported: false,
+    valid: false,
+    reason: "CATEGORY_NOT_SUPPORTED"
+  };
+}
 async function initDatabase() {
   await sql`
     CREATE TABLE IF NOT EXISTS batches (
