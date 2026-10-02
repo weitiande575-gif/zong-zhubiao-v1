@@ -850,11 +850,13 @@ if (!periodNo) {
 await sql`
   INSERT INTO recognition_jobs (
     batch_id,
-    image_id
+    image_id,
+    period_no
   )
   VALUES (
     ${batchId},
-    ${imageId}
+    ${imageId},
+    ${periodNo}
   )
   ON CONFLICT DO NOTHING
 `;
