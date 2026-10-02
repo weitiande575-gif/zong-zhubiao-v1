@@ -1034,6 +1034,113 @@ app.get("/api/recognition/analyze", async (c) => {
         .join("\n")
         .trim();
 
+        const parsed = JSON.parse(text);
+
+    if (!parsed || !Array.isArray(parsed.periods)) {
+      throw new Error("Invalid AI response: periods is missing");
+    }
+
+    let insertedCount = 0;
+
+    for (const period of parsed.periods) {
+      const periodNo = Number(period.period_no);
+
+      if (!Number.isInteger(periodNo)) {
+        continue;
+      }
+
+      const records = Array.isArray(period.records)
+        ? period.records
+        : [];
+
+      for (const record of records) {
+        const category = String(record.category || "").trim();
+
+        if (
+          !category ||
+          category === "平特" ||
+          category === "平特一肖"
+        ) {
+          continue;
+        }
+
+        const subtype =
+          record.subtype == null
+            ? null
+            : String(record.subtype).trim();
+
+        const sourceName =
+          record.source_name == null
+            ? null
+            : String(record.source_name).trim();
+
+        const sourceOrder = Number(record.source_order || 0);
+
+        const items = Array.isArray(record.items)
+          ? record.items.map((item: any) => String(item))
+          : [];
+
+        const rawText = String(record.raw_text || "");
+
+        const recordKey = [
+          image.image_id,
+          periodNo,
+          category,
+          subtype || "",
+          sourceName || "",
+          sourceOrder,
+          JSON.stringify(items)
+        ].join("|");
+
+        const inserted = await sql`
+          INSERT INTO records (
+            batch_id,
+            image_id,
+            period_no,
+            category,
+            subtype,
+            source_name,
+            source_order,
+            items,
+            item_count,
+            raw_text,
+            record_key,
+            confidence,
+            review_status
+          )
+          VALUES (
+            ${rows[0].batch_id},
+            ${image.image_id},
+            ${periodNo},
+            ${category},
+            ${subtype},
+            ${sourceName},
+            ${sourceOrder},
+            ${sql.json(items)},
+            ${items.length},
+            ${rawText},
+            ${recordKey},
+            ${null},
+            'PENDING'
+          )
+          ON CONFLICT (batch_id, record_key)
+          DO NOTHING
+          RETURNING id
+        `;
+
+        insertedCount += inserted.length;
+      }
+    }
+
+    await sql`
+      UPDATE recognition_jobs
+      SET
+        status = 'DONE',
+        finished_at = NOW(),
+        last_error = NULL
+      WHERE id = ${jobId}
+    `;
+
     return c.json({
       ok: true,
       job_id: jobId,
@@ -1041,16 +1148,52 @@ app.get("/api/recognition/analyze", async (c) => {
       original_name: image.original_name,
       model: OPENAI_MODEL,
       response_id: analysis.id || null,
-      text
+      inserted_count: insertedCount,
+      periods_count: parsed.periods.length,
+      result: parsed
     });
 
   } catch (error) {
+    const failedJobId =
+      Number(c.req.query("job_id") || 0);
+
+    if (failedJobId) {
+      try {
+        await sql`
+          UPDATE recognition_jobs
+          SET
+            status = 'FAILED',
+            finished_at = NOW(),
+            last_error = ${String(error)}
+          WHERE id = ${failedJobId}
+        `;
+      } catch {
+        // 保留原始错误
+      }
+    }
+
     return c.json({
       ok: false,
       error: String(error)
     }, 500);
   }
 });
+      
+      
+      
+      
+      
+       
+      
+    
+
+  
+    
+      
+      
+    
+  
+
 app.get("/api/dashboard", async (c) => {
   try {
     const result = await sql`
