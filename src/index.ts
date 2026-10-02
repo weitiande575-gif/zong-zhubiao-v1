@@ -321,6 +321,26 @@ await sql`
     UNIQUE (batch_id, record_key)
   )
 `;
+  await sql`
+  ALTER TABLE records
+  ADD COLUMN IF NOT EXISTS period_no INTEGER,
+  ADD COLUMN IF NOT EXISTS category TEXT,
+  ADD COLUMN IF NOT EXISTS subtype TEXT,
+  ADD COLUMN IF NOT EXISTS source_name TEXT,
+  ADD COLUMN IF NOT EXISTS source_order INTEGER,
+  ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS item_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS raw_text TEXT,
+  ADD COLUMN IF NOT EXISTS record_key TEXT,
+  ADD COLUMN IF NOT EXISTS confidence NUMERIC(5,4),
+  ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'PENDING',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+`;
+
+await sql`
+  CREATE UNIQUE INDEX IF NOT EXISTS records_batch_record_key_uidx
+  ON records (batch_id, record_key)
+`;
 await sql`
   CREATE TABLE IF NOT EXISTS recognition_jobs (
     id BIGSERIAL PRIMARY KEY,
