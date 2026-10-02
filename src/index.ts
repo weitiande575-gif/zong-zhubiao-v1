@@ -1553,6 +1553,118 @@ app.get("/api/recognition/records-by-category", async (c) => {
     }, 500);
   }
 });
+app.get("/api/recognition/liuxiao-summary", async (c) => {
+  try {
+    const imageId = Number(c.req.query("image_id") || 0);
+    const periodNo = Number(c.req.query("period_no") || 0);
+
+    if (!imageId || !periodNo) {
+      return c.json({
+        ok: false,
+        error: "image_id and period_no are required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        id,
+        source_name,
+        source_order,
+        items,
+        raw_text
+      FROM records
+      WHERE image_id = ${imageId}
+        AND period_no = ${periodNo}
+        AND category = '六肖'
+      ORDER BY source_order ASC, id ASC
+    `;
+
+    const zodiacOrder = [
+      "鼠", "牛", "虎", "兔", "龙", "蛇",
+      "马", "羊", "猴", "鸡", "狗", "猪"
+    ];
+
+    const counts: Record<string, number> = {};
+    for (const zodiac of zodiacOrder) {
+      counts[zodiac] = 0;
+    }
+
+    let totalCells = 0;
+
+    for (const row of rows) {
+      let items = row.items;
+
+      if (typeof items === "string") {
+        try {
+          items = JSON.parse(items);
+        } catch {
+          items = [];
+        }
+      }
+
+      if (!Array.isArray(items)) {
+        continue;
+      }
+
+      for (const item of items) {
+        const zodiac = String(item).trim();
+
+        if (zodiacOrder.includes(zodiac)) {
+          counts[zodiac] += 1;
+          totalCells += 1;
+        }
+      }
+    }
+
+    const ranking = zodiacOrder
+      .map((zodiac) => ({
+        zodiac,
+        count: counts[zodiac]
+      }))
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        return zodiacOrder.indexOf(a.zodiac) -
+          zodiacOrder.indexOf(b.zodiac);
+      });
+
+    let previousCount: number | null = null;
+    let previousRank = 0;
+
+    const competitionRanking = ranking.map((row, index) => {
+      if (previousCount === null || row.count !== previousCount) {
+        previousRank = index + 1;
+        previousCount = row.count;
+      }
+
+      return {
+        rank: previousRank,
+        zodiac: row.zodiac,
+        count: row.count
+      };
+    });
+
+    return c.json({
+      ok: true,
+      image_id: imageId,
+period_no: periodNo,
+category: "六肖",
+group_count: rows.length,
+total_cells: totalCells,
+expected_cells: rows.length * 6,
+cells_valid: totalCells === rows.length * 6,
+counts,
+ranking: competitionRanking,
+groups: rows
+});
+} catch (error) {
+  return c.json({
+    ok: false,
+    error: String(error)
+  }, 500);
+}
+});
       app.get("/api/recognition/validate-tail", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
