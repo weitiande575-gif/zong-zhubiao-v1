@@ -1422,62 +1422,73 @@ ORDER BY period_no ASC, source_order ASC, id ASC
       ORDER BY period_no ASC, id ASC
     `;
 
-    const allTails = ["0","1","2","3","4","5","6","7","8","9"];
-
     const results = rows.map((row: any) => {
-      const rawText = String(row.raw_text || "");
+  const validation = validateRecognitionRecord(row);
 
-      const match = rawText.match(
-        /(?:期)?\s*[\(（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[\)）]/
-      );
+  return {
+    id: row.id,
+    period_no: row.period_no,
+    raw_text: row.raw_text,
+    killed: validation.excluded ?? [],
+    expected: validation.expected ?? [],
+    actual: validation.actual ?? [],
+    valid: validation.valid === true
+  };
+});
 
-      if (!match) {
-        return {
-          id: row.id,
-          period_no: row.period_no,
-          raw_text: rawText,
-          items: row.items,
-          status: "UNABLE_TO_PARSE"
-        };
-      }
+    
+      
 
-      const killed = [match[1], match[2]]
-        .sort();
+      
+      
+      
 
-      const expected = allTails.filter(
-        (tail) => !killed.includes(tail)
-      );
+      
+        
+          
+        
+          
+          
+          
+      
+      
 
-      let parsedItems: any = row.items;
+      
+        
 
-if (typeof parsedItems === "string") {
-  try {
-    parsedItems = JSON.parse(parsedItems);
-  } catch {
-    parsedItems = [];
-  }
-}
+      
+        
+      
 
-const actual = Array.isArray(parsedItems)
-  ? parsedItems.map(String).sort()
-  : [];
+      
+
+
+  
+    
+  
+    
+  
+
+
+  
+  
         
         
 
-      const valid =
-        actual.length === 8 &&
-        JSON.stringify(actual) === JSON.stringify(expected);
+      
+        
+      
 
-      return {
-        id: row.id,
-        period_no: row.period_no,
-        raw_text: rawText,
-        killed,
-        expected,
-        actual,
-        valid
-      };
-    });
+      
+        
+        
+        
+        
+        
+        
+        
+      
+  
 
     const validRows = results.filter(
       (row: any) => row.valid === true
