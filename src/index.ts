@@ -1162,7 +1162,13 @@ const runRecognitionJob = async (c: any) => {
     }
 
     const image = rows[0];
-
+// 同一张图片重新识别时，先清除旧识别结果，
+    // 防止重复运行任务造成 records 不断叠加。
+    await sql`
+      DELETE FROM records
+      WHERE image_id = ${image.image_id}
+        AND batch_id = ${image.batch_id}
+    `;
     const object = await s3.send(
       new GetObjectCommand({
         Bucket: BUCKET_NAME,
