@@ -9,11 +9,15 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const BUCKET_NAME = process.env.BUCKET_NAME;
 const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-6-luna";
 const AWS_S3_ENDPOINT_URL = process.env.AWS_S3_ENDPOINT_URL;
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is missing");
 }
-
+if (!OPENAI_API_KEY) {
+  throw new Error("OPENAI_API_KEY is missing");
+}
 const sql = postgres(DATABASE_URL, {
   ssl: "require",
   max: 5,
@@ -35,6 +39,64 @@ const s3 = new S3Client({
     secretAccessKey: AWS_SECRET_ACCESS_KEY,
   },
 });
+async function analyzeImageWithOpenAI(
+  bytes: Uint8Array,
+  contentType: string
+) {
+  const base64 =
+    Buffer.from(bytes).toString("base64");
+
+  const response = await fetch(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+      headers: {
+        "Authorization":
+          `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        input: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text:
+`请完整扫描整张图片。
+
+先识别图片中的期数和所有可见文字。
+
+当前只做测试：
+1. 不要遗漏图片任何区域。
+2. 多个期数必须分开。
+3. 不要把不同期的数据混在一起。
+4. 返回你实际看到的内容，不要猜测。`
+              },
+              {
+                type: "input_image",
+                image_url:
+                  `data:${contentType};base64,${base64}`,
+                detail: "high"
+              }
+            ]
+          }
+        ]
+      })
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      `OpenAI API ${response.status}: ${JSON.stringify(data)}`
+    );
+  }
+
+  return data;
+}
 async function initDatabase() {
   await sql`
     CREATE TABLE IF NOT EXISTS batches (
