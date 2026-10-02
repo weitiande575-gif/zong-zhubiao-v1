@@ -1116,7 +1116,7 @@ app.get("/api/recognition/analyze", async (c) => {
             ${subtype},
             ${sourceName},
             ${sourceOrder},
-            ${sql.json(items)},
+            ${JSON.stringify(items)}::jsonb,
             ${items.length},
             ${rawText},
             ${recordKey},
@@ -1153,7 +1153,9 @@ app.get("/api/recognition/analyze", async (c) => {
       result: parsed
     });
 
+ 
   } catch (error) {
+    console.error("Recognition analyze failed:", error);
     const failedJobId =
       Number(c.req.query("job_id") || 0);
 
