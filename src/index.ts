@@ -261,43 +261,103 @@ function validateRecognitionRecord(row: any) {
     ? parsedItems.map(String)
     : [];
 
-  if (category === "八尾") {
-    const allTails = [
-      "0","1","2","3","4",
-      "5","6","7","8","9"
-    ];
+if (
+  category === "八尾" ||
+  category === "七尾" ||
+  category === "六尾"
+) {
+  const allTails = [
+    "0","1","2","3","4",
+    "5","6","7","8","9"
+  ];
 
-    const match = rawText.match(
-      /(?:期)?\s*[\(（]\s*(\d)\s*[.,，、]\s*(\d)\s*尾?\s*[\)）]/
-    );
+  const expectedCount =
+    category === "八尾" ? 8 :
+    category === "七尾" ? 7 :
+    6;
 
-    if (!match) {
-      return {
-        supported: true,
-        valid: false,
-        reason: "TAIL_EXCLUSION_NOT_FOUND"
-      };
-    }
+  const excludedCount = 10 - expectedCount;
 
-    const killed = [match[1], match[2]].sort();
+  const tailMatch = rawText.match(
+    /[\(（]([^()（）]+)[\)）]/
+  );
 
-    const expected = allTails
-      .filter((tail) => !killed.includes(tail))
-      .sort();
-
-    const normalizedActual = actual.sort();
-
+  if (!tailMatch) {
     return {
       supported: true,
-      valid:
-        normalizedActual.length === 8 &&
-        JSON.stringify(normalizedActual) ===
-          JSON.stringify(expected),
-      expected,
-      actual: normalizedActual,
-      excluded: killed
+      valid: false,
+      reason: "TAIL_EXCLUSION_NOT_FOUND"
     };
   }
+
+  const killed = Array.from(
+    tailMatch[1].matchAll(/\d/g),
+    (match) => match[0]
+  );
+
+  const uniqueKilled = Array.from(new Set(killed)).sort();
+
+  if (uniqueKilled.length !== excludedCount) {
+    return {
+      supported: true,
+      valid: false,
+      reason: "TAIL_EXCLUSION_COUNT_MISMATCH",
+      excluded: uniqueKilled
+    };
+  }
+
+  const expected = allTails
+    .filter((tail) => !uniqueKilled.includes(tail))
+    .sort();
+
+  const normalizedActual = [...actual].sort();
+
+  return {
+    supported: true,
+    valid:
+      normalizedActual.length === expectedCount &&
+      JSON.stringify(normalizedActual) ===
+        JSON.stringify(expected),
+    expected,
+    actual: normalizedActual,
+    excluded: uniqueKilled
+  };
+}
+  return {
+  supported: false,
+  valid: false,
+  reason: "CATEGORY_NOT_SUPPORTED"
+};
+}
+    
+
+    
+      
+    
+
+    
+      
+        
+    
+      
+      
+    
+
+      
+
+    
+
+  
+      
+    
+        
+    
+          
+      
+      
+      
+    
+  
 
   return {
     supported: false,
