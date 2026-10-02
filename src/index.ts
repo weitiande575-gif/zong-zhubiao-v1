@@ -819,6 +819,102 @@ app.get("/api/recognition/image", async (c) => {
     }, 500);
   }
 });
+app.get("/api/recognition/analyze", async (c) => {
+  try {
+    const jobId =
+      Number(c.req.query("job_id") || 0);
+
+    if (!jobId) {
+      return c.json({
+        ok: false,
+        error: "job_id is required"
+      }, 400);
+    }
+
+    const rows = await sql`
+      SELECT
+        j.id AS job_id,
+        j.image_id,
+        i.original_name,
+        i.object_key,
+        i.content_type
+      FROM recognition_jobs j
+      JOIN images i
+        ON i.id = j.image_id
+      WHERE j.id = ${jobId}
+      LIMIT 1
+    `;
+
+    if (rows.length === 0) {
+      return c.json({
+        ok: false,
+        error: "Job not found"
+      }, 404);
+    }
+
+    const image = rows[0];
+
+    const object = await s3.send(
+      new GetObjectCommand({
+        Bucket: BUCKET_NAME,
+        Key: image.object_key
+      })
+    );
+
+    if (!object.Body) {
+      return c.json({
+        ok: false,
+        error: "Image body is empty"
+      }, 404);
+    }
+
+    const bytes =
+      await object.Body.transformToByteArray();
+
+    const contentType =
+      object.ContentType ||
+      image.content_type ||
+      "image/jpeg";
+
+    const analysis =
+      await analyzeImageWithOpenAI(
+        bytes,
+        contentType
+      );
+
+    const text =
+      (analysis.output || [])
+        .flatMap((item: any) =>
+          Array.isArray(item.content)
+            ? item.content
+            : []
+        )
+        .filter((part: any) =>
+          part.type === "output_text"
+        )
+        .map((part: any) =>
+          String(part.text || "")
+        )
+        .join("\n")
+        .trim();
+
+    return c.json({
+      ok: true,
+      job_id: jobId,
+      image_id: image.image_id,
+      original_name: image.original_name,
+      model: OPENAI_MODEL,
+      response_id: analysis.id || null,
+      text
+    });
+
+  } catch (error) {
+    return c.json({
+      ok: false,
+      error: String(error)
+    }, 500);
+  }
+});
 app.get("/api/dashboard", async (c) => {
   try {
     const result = await sql`
