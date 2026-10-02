@@ -1407,7 +1407,7 @@ ORDER BY period_no ASC, source_order ASC, id ASC
       ok: false,
       error: String(error)
     }, 500);
-  }
+  });
 app.get("/api/recognition/records-by-category", async (c) => {
   try {
     const category = String(c.req.query("category") || "").trim();
@@ -1453,8 +1453,8 @@ app.get("/api/recognition/records-by-category", async (c) => {
       error: String(error)
     }, 500);
   }
+    
 });
-      });
       app.get("/api/recognition/records-summary", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
