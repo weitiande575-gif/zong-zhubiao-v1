@@ -56,35 +56,170 @@ async function analyzeImageWithOpenAI(
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: OPENAI_MODEL,
-        input: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text:
-`请完整扫描整张图片。
+  model: OPENAI_MODEL,
 
-先识别图片中的期数和所有可见文字。
+  input: [
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text:
+`请完整扫描整张图片，从上到下、从左到右，不要只识别局部。
 
-当前只做测试：
-1. 不要遗漏图片任何区域。
-2. 多个期数必须分开。
-3. 不要把不同期的数据混在一起。
-4. 返回你实际看到的内容，不要猜测。`
-              },
-              {
-                type: "input_image",
-                image_url:
-                  `data:${contentType};base64,${base64}`,
-                detail: "high"
-              }
-            ]
-          }
-        ]
-      })
+只整理以下12类：
+四行、三行、四头、三头、六肖、七肖、八肖、九肖、双波、八尾、七尾、六尾。
+
+规则：
+1. 平特、平特一肖全部忽略，不得写入结果。
+2. 图片中出现多个期数时，必须按期数分开，绝对不能串期。
+3. 同一期如果出现多个独立来源或多组资料，要分别保留，不能合并。
+4. 六肖及其他分类不设置固定组数，以图片实际出现多少组为准。
+5. “资料正在更新”等没有实际内容的期数，status写updating，records留空。
+6. 看不清或无法确定时不要猜，保持原文并降低确定性。
+7. source_order按图片从上到下出现顺序，从1开始。
+8. items必须保持原图顺序。`
+        },
+        {
+          type: "input_image",
+          image_url:
+            `data:${contentType};base64,${base64}`,
+          detail: "high"
+        }
+      ]
     }
+  ],
+
+  text: {
+    format: {
+      type: "json_schema",
+      name: "zong_zhubiao_image_records",
+      strict: true,
+      schema: {
+        type: "object",
+        properties: {
+          periods: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                period_no: {
+                  type: "integer"
+                },
+                status: {
+                  type: "string",
+                  enum: [
+                    "ok",
+                    "updating",
+                    "unknown"
+                  ]
+                },
+                records: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      category: {
+                        type: "string",
+                        enum: [
+                          "四行",
+                          "三行",
+                          "四头",
+                          "三头",
+                          "六肖",
+                          "七肖",
+                          "八肖",
+                          "九肖",
+                          "双波",
+                          "八尾",
+                          "七尾",
+                          "六尾"
+                        ]
+                      },
+                      subtype: {
+                        anyOf: [
+                          { type: "string" },
+                          { type: "null" }
+                        ]
+                      },
+                      source_name: {
+                        anyOf: [
+                          { type: "string" },
+                          { type: "null" }
+                        ]
+                      },
+                      source_order: {
+                        type: "integer"
+                      },
+                      items: {
+                        type: "array",
+                        items: {
+                          type: "string"
+                        }
+                      },
+                      raw_text: {
+                        type: "string"
+                      }
+                    },
+                    required: [
+                      "category",
+                      "subtype",
+                      "source_name",
+                      "source_order",
+                      "items",
+                      "raw_text"
+                    ],
+                    additionalProperties: false
+                  }
+                }
+              },
+              required: [
+                "period_no",
+                "status",
+                "records"
+              ],
+              additionalProperties: false
+            }
+          }
+        },
+        required: [
+          "periods"
+        ],
+        additionalProperties: false
+      }
+    }
+  }
+})
+    }
+);    
+        
+          
+            
+            
+              
+                
+                
+
+
+
+
+
+
+
+
+
+              
+              
+                
+                
+                  
+                
+              
+            
+          
+        
+      
+    
   );
 
   const data = await response.json();
