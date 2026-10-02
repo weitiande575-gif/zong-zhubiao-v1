@@ -1266,6 +1266,7 @@ const runRecognitionJob = async (c: any) => {
         created_at
       FROM records
       WHERE image_id = ${imageId}
+  AND review_status = '补集处理'
       ORDER BY period_no ASC, source_order ASC, id ASC
     `;
 
