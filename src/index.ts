@@ -507,6 +507,7 @@ await sql`
     UNIQUE (batch_id, image_id)
   )
 `;
+  await sql`ALTER TABLE recognition_jobs ADD COLUMN IF NOT EXISTS period_no INTEGER`;
   console.log("Database initialized");
 }
 app.get("/", async (c) => {
@@ -868,6 +869,7 @@ await sql`
     return c.json({
       ok: true,
       batch_id: batchId,
+      period_no: periodNo,
       uploaded_count: files.length,
       results
     });
