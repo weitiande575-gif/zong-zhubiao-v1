@@ -1251,25 +1251,29 @@ const runRecognitionJob = async (c: any) => {
       );
     }
 
-    const candidateCount = matchedPeriods.reduce(
-      (sum: number, period: any) =>
-        sum + (Array.isArray(period.records) ? period.records.length : 0),
+    const usableCandidateCount = matchedPeriods.reduce(
+      (sum: number, period: any) => {
+        const records = Array.isArray(period.records)
+          ? period.records
+          : [];
+
+        return sum + records.filter((record: any) => {
+          const category = String(record.category || "").trim();
+
+          return (
+            category &&
+            category !== "平特" &&
+            category !== "平特一肖"
+          );
+        }).length;
+      },
       0
     );
 
-    if (candidateCount === 0) {
-      const existingCounts = await sql`
-        SELECT COUNT(*)::int AS count
-        FROM records
-        WHERE image_id = ${image.image_id}
-          AND batch_id = ${image.batch_id}
-      `;
-
-      if (Number(existingCounts[0]?.count || 0) > 0) {
-        throw new Error(
-          "AI returned no records for bound period; preserving existing records"
-        );
-      }
+    if (usableCandidateCount === 0) {
+      throw new Error(
+        "AI returned no usable records for bound period; preserving existing records"
+      );
     }
 
     let insertedCount = 0;
@@ -1316,6 +1320,25 @@ const runRecognitionJob = async (c: any) => {
           : [];
 
         const rawText = String(record.raw_text || "");
+
+        if (category === "六肖") {
+          const zodiacSet = new Set([
+            "鼠","牛","虎","兔","龙","蛇",
+            "马","羊","猴","鸡","狗","猪"
+          ]);
+
+          const uniqueItems = new Set(items);
+
+          if (
+            items.length !== 6 ||
+            uniqueItems.size !== 6 ||
+            items.some((item: string) => !zodiacSet.has(item))
+          ) {
+            throw new Error(
+              `INVALID_LIUXIAO_RECORD: source_order=${sourceOrder}, items=${JSON.stringify(items)}`
+            );
+          }
+        }
 
         const recordKey = [
           image.image_id,
