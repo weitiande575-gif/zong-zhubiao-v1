@@ -1429,11 +1429,15 @@ const runRecognitionJob = async (c: any) => {
           AND batch_id = ${image.batch_id}
       `;
 
+      const semanticSeen = new Set<string>();
+
       for (const period of matchedPeriods) {
         const periodNo = boundPeriodNo;
 
       const records = Array.isArray(period.records)
-        ? period.records
+        ? [...period.records].sort((a: any, b: any) =>
+            Number(Boolean(b?.subtype)) - Number(Boolean(a?.subtype))
+          )
         : [];
 
       for (const record of records) {
@@ -1478,6 +1482,18 @@ const runRecognitionJob = async (c: any) => {
         }
 
         items = shapeValidation.actual;
+
+        const semanticKey = [
+          periodNo,
+          category,
+          JSON.stringify(items)
+        ].join("|");
+
+        if (semanticSeen.has(semanticKey)) {
+          continue;
+        }
+
+        semanticSeen.add(semanticKey);
 
         const recordKey = [
           image.image_id,
