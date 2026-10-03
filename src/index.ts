@@ -263,6 +263,150 @@ async function analyzeImageWithOpenAI(
 
   return data;
 }
+function validateRecordShape(row: any) {
+  const category = String(row.category || "").trim();
+
+  let parsedItems: any = row.items;
+  if (typeof parsedItems === "string") {
+    try {
+      parsedItems = JSON.parse(parsedItems);
+    } catch {
+      parsedItems = [];
+    }
+  }
+
+  const rawItems = Array.isArray(parsedItems)
+    ? parsedItems.map((item: any) => String(item).trim())
+    : [];
+
+  const zodiacUniverse = [
+    "鼠","牛","虎","兔","龙","蛇",
+    "马","羊","猴","鸡","狗","猪"
+  ];
+  const digitUniverse5 = ["0","1","2","3","4"];
+  const lineUniverse5 = ["1","2","3","4","5"];
+  const tailUniverse10 = ["0","1","2","3","4","5","6","7","8","9"];
+  const waveUniverse = ["红波","蓝波","绿波"];
+
+  const rules: Record<string, {
+    expectedCount: number;
+    allowed: string[];
+    normalize?: (value: string) => string;
+  }> = {
+    "六肖": { expectedCount: 6, allowed: zodiacUniverse },
+    "七肖": { expectedCount: 7, allowed: zodiacUniverse },
+    "八肖": { expectedCount: 8, allowed: zodiacUniverse },
+    "九肖": { expectedCount: 9, allowed: zodiacUniverse },
+
+    "五头": {
+      expectedCount: 5,
+      allowed: digitUniverse5,
+      normalize: (value) => value.replace(/头$/u, "")
+    },
+    "四头": {
+      expectedCount: 4,
+      allowed: digitUniverse5,
+      normalize: (value) => value.replace(/头$/u, "")
+    },
+    "三头": {
+      expectedCount: 3,
+      allowed: digitUniverse5,
+      normalize: (value) => value.replace(/头$/u, "")
+    },
+
+    "五行": {
+      expectedCount: 5,
+      allowed: lineUniverse5,
+      normalize: (value) => value.replace(/行$/u, "")
+    },
+    "四行": {
+      expectedCount: 4,
+      allowed: lineUniverse5,
+      normalize: (value) => value.replace(/行$/u, "")
+    },
+    "三行": {
+      expectedCount: 3,
+      allowed: lineUniverse5,
+      normalize: (value) => value.replace(/行$/u, "")
+    },
+
+    "八尾": {
+      expectedCount: 8,
+      allowed: tailUniverse10,
+      normalize: (value) => value.replace(/尾$/u, "")
+    },
+    "七尾": {
+      expectedCount: 7,
+      allowed: tailUniverse10,
+      normalize: (value) => value.replace(/尾$/u, "")
+    },
+    "六尾": {
+      expectedCount: 6,
+      allowed: tailUniverse10,
+      normalize: (value) => value.replace(/尾$/u, "")
+    },
+
+    "双波": { expectedCount: 2, allowed: waveUniverse },
+    "波色": { expectedCount: 3, allowed: waveUniverse }
+  };
+
+  const rule = rules[category];
+
+  if (!rule) {
+    return {
+      supported: false,
+      valid: false,
+      reason: "CATEGORY_NOT_SUPPORTED",
+      actual: rawItems
+    };
+  }
+
+  const actual = rawItems.map((item) =>
+    rule.normalize ? rule.normalize(item) : item
+  );
+
+  if (actual.length !== rule.expectedCount) {
+    return {
+      supported: true,
+      valid: false,
+      reason: "COUNT_MISMATCH",
+      expectedCount: rule.expectedCount,
+      actualCount: actual.length,
+      actual
+    };
+  }
+
+  if (new Set(actual).size !== actual.length) {
+    return {
+      supported: true,
+      valid: false,
+      reason: "DUPLICATE_ITEMS",
+      actual
+    };
+  }
+
+  const invalidItems = actual.filter(
+    (item) => !rule.allowed.includes(item)
+  );
+
+  if (invalidItems.length > 0) {
+    return {
+      supported: true,
+      valid: false,
+      reason: "ITEM_OUT_OF_UNIVERSE",
+      invalidItems,
+      actual
+    };
+  }
+
+  return {
+    supported: true,
+    valid: true,
+    reason: "OK",
+    expectedCount: rule.expectedCount,
+    actual
+  };
+}
 function validateRecognitionRecord(row: any) {
   const category = String(row.category || "");
   const rawText = String(row.raw_text || "");
@@ -1315,30 +1459,25 @@ const runRecognitionJob = async (c: any) => {
 
         const sourceOrder = Number(record.source_order || 0);
 
-        const items = Array.isArray(record.items)
+        let items = Array.isArray(record.items)
           ? record.items.map((item: any) => String(item))
           : [];
 
         const rawText = String(record.raw_text || "");
 
-        if (category === "六肖") {
-          const zodiacSet = new Set([
-            "鼠","牛","虎","兔","龙","蛇",
-            "马","羊","猴","鸡","狗","猪"
-          ]);
+        const shapeValidation = validateRecordShape({
+          ...record,
+          category,
+          items
+        });
 
-          const uniqueItems = new Set(items);
-
-          if (
-            items.length !== 6 ||
-            uniqueItems.size !== 6 ||
-            items.some((item: string) => !zodiacSet.has(item))
-          ) {
-            throw new Error(
-              `INVALID_LIUXIAO_RECORD: source_order=${sourceOrder}, items=${JSON.stringify(items)}`
-            );
-          }
+        if (!shapeValidation.supported || !shapeValidation.valid) {
+          throw new Error(
+            `INVALID_RECORD_SHAPE: category=${category}, source_order=${sourceOrder}, reason=${shapeValidation.reason}`
+          );
         }
+
+        items = shapeValidation.actual;
 
         const recordKey = [
           image.image_id,
