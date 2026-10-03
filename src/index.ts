@@ -1439,6 +1439,14 @@ const runRecognitionJob = async (c: any) => {
           )
         : [];
 
+      console.log("Recognition candidates:", JSON.stringify(
+        records.map((r: any) => ({
+          category: r?.category ?? null,
+          subtype: r?.subtype ?? null,
+          items: Array.isArray(r?.items) ? r.items : []
+        }))
+      ));
+
       for (const record of records) {
         const category = String(record.category || "").trim();
 
