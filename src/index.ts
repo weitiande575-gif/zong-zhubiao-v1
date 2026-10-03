@@ -1159,6 +1159,7 @@ const runRecognitionJob = async (c: any) => {
         j.id AS job_id,
         j.image_id,
         j.batch_id,
+        j.period_no,
         i.original_name,
         i.object_key,
         i.content_type
@@ -1238,6 +1239,11 @@ const runRecognitionJob = async (c: any) => {
 
     for (const period of parsed.periods) {
       const periodNo = Number(period.period_no);
+      const boundPeriodNo = Number(image.period_no);
+
+      if (Number.isInteger(boundPeriodNo) && periodNo !== boundPeriodNo) {
+        continue;
+      }
 
       if (!Number.isInteger(periodNo)) {
         continue;
