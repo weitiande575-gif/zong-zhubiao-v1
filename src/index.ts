@@ -1483,7 +1483,6 @@ const runRecognitionJob = async (c: any) => {
           image.image_id,
           periodNo,
           category,
-          subtype || "",
           sourceName || "",
           sourceOrder,
           JSON.stringify(items)
