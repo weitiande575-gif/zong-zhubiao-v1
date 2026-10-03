@@ -1426,7 +1426,6 @@ const runRecognitionJob = async (c: any) => {
       await tx`
         DELETE FROM records
         WHERE image_id = ${image.image_id}
-          AND batch_id = ${image.batch_id}
       `;
 
       const semanticSeen = new Set<string>();
