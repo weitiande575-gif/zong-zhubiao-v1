@@ -858,7 +858,14 @@ await sql`
     ${imageId},
     ${periodNo}
   )
-  ON CONFLICT DO NOTHING
+  ON CONFLICT (batch_id, image_id)
+  DO UPDATE SET
+    period_no = EXCLUDED.period_no,
+    status = 'PENDING',
+    attempt_count = 0,
+    last_error = NULL,
+    started_at = NULL,
+    finished_at = NULL
 `;
       results.push({
         file_name: file.name,
