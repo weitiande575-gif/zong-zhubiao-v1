@@ -119,6 +119,7 @@ pre{
     multiple
   >
 
+  <input id="uploadPeriodNo" type="number" placeholder="输入期数，例如：275">
   <button onclick="uploadImages()">
     上传图片
   </button>
@@ -273,9 +274,11 @@ async function uploadImages(){
 
   try{
 
-    const formData = new FormData();
+    const periodNo = document.getElementById("uploadPeriodNo").value;
+  const formData = new FormData();
 
     formData.append("batch_id",batchId);
+  formData.append("period_no",periodNo);
 
     for(const file of files){
       formData.append("files",file);
