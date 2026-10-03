@@ -1185,13 +1185,6 @@ const runRecognitionJob = async (c: any) => {
     }
 
     const image = rows[0];
-// 同一张图片重新识别时，先清除旧识别结果，
-    // 防止重复运行任务造成 records 不断叠加。
-    await sql`
-      DELETE FROM records
-      WHERE image_id = ${image.image_id}
-        AND batch_id = ${image.batch_id}
-    `;
     const object = await s3.send(
       new GetObjectCommand({
         Bucket: BUCKET_NAME,
@@ -1242,19 +1235,54 @@ const runRecognitionJob = async (c: any) => {
       throw new Error("Invalid AI response: periods is missing");
     }
 
+    const boundPeriodNo = Number(image.period_no);
+
+    if (!Number.isInteger(boundPeriodNo) || boundPeriodNo <= 0) {
+      throw new Error("Recognition job period_no is invalid");
+    }
+
+    const matchedPeriods = parsed.periods.filter(
+      (period: any) => Number(period.period_no) === boundPeriodNo
+    );
+
+    if (matchedPeriods.length === 0) {
+      throw new Error(
+        `AI response does not contain bound period ${boundPeriodNo}`
+      );
+    }
+
+    const candidateCount = matchedPeriods.reduce(
+      (sum: number, period: any) =>
+        sum + (Array.isArray(period.records) ? period.records.length : 0),
+      0
+    );
+
+    if (candidateCount === 0) {
+      const existingCounts = await sql`
+        SELECT COUNT(*)::int AS count
+        FROM records
+        WHERE image_id = ${image.image_id}
+          AND batch_id = ${image.batch_id}
+      `;
+
+      if (Number(existingCounts[0]?.count || 0) > 0) {
+        throw new Error(
+          "AI returned no records for bound period; preserving existing records"
+        );
+      }
+    }
+
     let insertedCount = 0;
 
-    for (const period of parsed.periods) {
-      const periodNo = Number(period.period_no);
-      const boundPeriodNo = Number(image.period_no);
+    await sql.begin(async (tx) => {
+      await tx`
+        DELETE FROM records
+        WHERE image_id = ${image.image_id}
+          AND batch_id = ${image.batch_id}
+      `;
 
-      if (Number.isInteger(boundPeriodNo) && periodNo !== boundPeriodNo) {
-        continue;
-      }
-
-      if (!Number.isInteger(periodNo)) {
-        continue;
-      }
+      for (const period of matchedPeriods) {
+        const periodNo = boundPeriodNo;
 
       const records = Array.isArray(period.records)
         ? period.records
@@ -1299,7 +1327,7 @@ const runRecognitionJob = async (c: any) => {
           JSON.stringify(items)
         ].join("|");
 
-        const inserted = await sql`
+        const inserted = await tx`
           INSERT INTO records (
             batch_id,
             image_id,
@@ -1339,14 +1367,15 @@ const runRecognitionJob = async (c: any) => {
       }
     }
 
-    await sql`
-      UPDATE recognition_jobs
-      SET
-        status = 'DONE',
-        finished_at = NOW(),
-        last_error = NULL
-      WHERE id = ${jobId}
-    `;
+      await tx`
+        UPDATE recognition_jobs
+        SET
+          status = 'DONE',
+          finished_at = NOW(),
+          last_error = NULL
+        WHERE id = ${jobId}
+      `;
+    });
 
     return c.json({
       ok: true,
