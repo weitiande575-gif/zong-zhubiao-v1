@@ -273,11 +273,14 @@ async function analyzeImageWithFallback(
   contentType: string
 ) {
   try {
-    return await analyzeImageWithOpenAI(
-      bytes,
-      contentType,
-      OPENAI_MODEL
-    );
+    return {
+      analysis: await analyzeImageWithOpenAI(
+        bytes,
+        contentType,
+        OPENAI_MODEL
+      ),
+      modelUsed: OPENAI_MODEL
+    };
   } catch (error) {
     const message = String(error);
     const shouldFallback =
@@ -295,11 +298,14 @@ async function analyzeImageWithFallback(
       `Primary model ${OPENAI_MODEL} failed; retrying with ${OPENAI_FALLBACK_MODEL}`
     );
 
-    return await analyzeImageWithOpenAI(
-      bytes,
-      contentType,
-      OPENAI_FALLBACK_MODEL
-    );
+    return {
+      analysis: await analyzeImageWithOpenAI(
+        bytes,
+        contentType,
+        OPENAI_FALLBACK_MODEL
+      ),
+      modelUsed: OPENAI_FALLBACK_MODEL
+    };
   }
 }
 
@@ -1333,6 +1339,71 @@ app.get("/api/recognition/image", async (c) => {
     }, 500);
   }
 });
+
+function validateAnalysisForBoundPeriod(
+  analysis: any,
+  boundPeriodNo: number
+) {
+  const text =
+    (analysis.output || [])
+      .flatMap((item: any) =>
+        Array.isArray(item.content) ? item.content : []
+      )
+      .filter((part: any) => part.type === "output_text")
+      .map((part: any) => String(part.text || ""))
+      .join("\n")
+      .trim();
+
+  const parsed = JSON.parse(text);
+
+  if (!parsed || !Array.isArray(parsed.periods)) {
+    throw new Error("Invalid AI response: periods is missing");
+  }
+
+  const matched = parsed.periods.filter(
+    (period: any) =>
+      Number(period.period_no) === boundPeriodNo
+  );
+
+  if (matched.length === 0) {
+    throw new Error(
+      `AI response does not contain bound period ${boundPeriodNo}`
+    );
+  }
+
+  const records = matched.flatMap((period: any) =>
+    Array.isArray(period.records) ? period.records : []
+  ).filter((record: any) => {
+    const category = String(record.category || "").trim();
+    return category &&
+      category !== "平特" &&
+      category !== "平特一肖";
+  });
+
+  if (records.length === 0) {
+    throw new Error("AI returned no usable records");
+  }
+
+  for (const record of records) {
+    const category = String(record.category || "").trim();
+    const items = Array.isArray(record.items)
+      ? record.items.map((x: any) => String(x))
+      : [];
+
+    const check = validateRecordShape({
+      ...record,
+      category,
+      items
+    });
+
+    if (!check.supported || !check.valid) {
+      throw new Error(
+        `INVALID_RECORD_SHAPE: category=${category}, reason=${check.reason}`
+      );
+    }
+  }
+}
+
 const runRecognitionJob = async (c: any) => {
   try {
     const jobId =
@@ -1391,11 +1462,46 @@ const runRecognitionJob = async (c: any) => {
       image.content_type ||
       "image/jpeg";
 
-    const analysis =
+    let { analysis, modelUsed } =
       await analyzeImageWithFallback(
         bytes,
         contentType
       );
+
+    const boundPeriodNo = Number(image.period_no);
+
+    if (!Number.isInteger(boundPeriodNo) || boundPeriodNo <= 0) {
+      throw new Error("Recognition job period_no is invalid");
+    }
+
+    try {
+      validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
+    } catch (error) {
+      if (
+        !OPENAI_FALLBACK_MODEL ||
+        OPENAI_FALLBACK_MODEL === OPENAI_MODEL ||
+        modelUsed === OPENAI_FALLBACK_MODEL
+      ) {
+        throw error;
+      }
+
+      console.warn(
+        `Primary result failed validation; retrying with ${OPENAI_FALLBACK_MODEL}`
+      );
+
+      analysis = await analyzeImageWithOpenAI(
+        bytes,
+        contentType,
+        OPENAI_FALLBACK_MODEL
+      );
+
+      modelUsed = OPENAI_FALLBACK_MODEL;
+
+      validateAnalysisForBoundPeriod(
+        analysis,
+        boundPeriodNo
+      );
+    }
 
     const text =
       (analysis.output || [])
@@ -1419,11 +1525,6 @@ const runRecognitionJob = async (c: any) => {
       throw new Error("Invalid AI response: periods is missing");
     }
 
-    const boundPeriodNo = Number(image.period_no);
-
-    if (!Number.isInteger(boundPeriodNo) || boundPeriodNo <= 0) {
-      throw new Error("Recognition job period_no is invalid");
-    }
 
     const matchedPeriods = parsed.periods.filter(
       (period: any) => Number(period.period_no) === boundPeriodNo
