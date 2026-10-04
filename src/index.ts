@@ -14,6 +14,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-6-luna";
 const OPENAI_FALLBACK_MODEL =
   process.env.OPENAI_FALLBACK_MODEL || "gpt-6-sol";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || "qwen/qwen3-vl-235b-a22b-instruct";
 const AWS_S3_ENDPOINT_URL = process.env.AWS_S3_ENDPOINT_URL;
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is missing");
@@ -45,18 +47,21 @@ const s3 = new S3Client({
 async function analyzeImageWithOpenAI(
   bytes: Uint8Array,
   contentType: string,
-  model: string = OPENAI_MODEL
+  model: string = OPENAI_MODEL,
+  apiKey: string | undefined = OPENAI_API_KEY,
+  endpoint: string = "https://api.openai.com/v1/responses",
+  providerLabel: string = "OpenAI"
 ) {
   const base64 =
     Buffer.from(bytes).toString("base64");
 
   const response = await fetch(
-    "https://api.openai.com/v1/responses",
+    endpoint,
     {
       method: "POST",
       headers: {
         "Authorization":
-          `Bearer ${OPENAI_API_KEY}`,
+          `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -261,11 +266,15 @@ async function analyzeImageWithOpenAI(
 
   if (!response.ok) {
     throw new Error(
-      `OpenAI API ${response.status}: ${JSON.stringify(data)}`
+      `${providerLabel} API ${response.status}: ${JSON.stringify(data)}`
     );
   }
 
   return data;
+}
+
+async function analyzeImageWithOpenRouter(bytes: Uint8Array, contentType: string) {
+  return analyzeImageWithOpenAI(bytes, contentType, OPENROUTER_MODEL, OPENROUTER_API_KEY, "https://openrouter.ai/api/v1/responses", "OpenRouter");
 }
 
 async function analyzeImageWithFallback(
@@ -283,6 +292,9 @@ async function analyzeImageWithFallback(
     };
   } catch (error) {
     const message = String(error);
+    if (OPENROUTER_API_KEY && /credit_balance_exhausted|insufficient_quota/i.test(message)) {
+      return { analysis: await analyzeImageWithOpenRouter(bytes, contentType), modelUsed: OPENROUTER_MODEL };
+    }
     const shouldFallback =
       /OpenAI API (429|5\d\d):/u.test(message);
 
@@ -298,14 +310,17 @@ async function analyzeImageWithFallback(
       `Primary model ${OPENAI_MODEL} failed; retrying with ${OPENAI_FALLBACK_MODEL}`
     );
 
-    return {
-      analysis: await analyzeImageWithOpenAI(
-        bytes,
-        contentType,
-        OPENAI_FALLBACK_MODEL
-      ),
-      modelUsed: OPENAI_FALLBACK_MODEL
-    };
+    try {
+      return {
+        analysis: await analyzeImageWithOpenAI(bytes, contentType, OPENAI_FALLBACK_MODEL),
+        modelUsed: OPENAI_FALLBACK_MODEL
+      };
+    } catch (fallbackError) {
+      if (OPENROUTER_API_KEY) {
+        return { analysis: await analyzeImageWithOpenRouter(bytes, contentType), modelUsed: OPENROUTER_MODEL };
+      }
+      throw fallbackError;
+    }
   }
 }
 
@@ -1480,7 +1495,7 @@ const runRecognitionJob = async (c: any) => {
       if (
         !OPENAI_FALLBACK_MODEL ||
         OPENAI_FALLBACK_MODEL === OPENAI_MODEL ||
-        modelUsed === OPENAI_FALLBACK_MODEL
+        modelUsed === OPENROUTER_MODEL
       ) {
         throw error;
       }
@@ -1497,10 +1512,14 @@ const runRecognitionJob = async (c: any) => {
 
       modelUsed = OPENAI_FALLBACK_MODEL;
 
-      validateAnalysisForBoundPeriod(
-        analysis,
-        boundPeriodNo
-      );
+      try {
+        validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
+      } catch (fallbackValidationError) {
+        if (!OPENROUTER_API_KEY) throw fallbackValidationError;
+        analysis = await analyzeImageWithOpenRouter(bytes, contentType);
+        modelUsed = OPENROUTER_MODEL;
+        validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
+      }
     }
 
     const text =
