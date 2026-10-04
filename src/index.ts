@@ -12,6 +12,8 @@ const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-6-luna";
+const OPENAI_FALLBACK_MODEL =
+  process.env.OPENAI_FALLBACK_MODEL || "gpt-6-sol";
 const AWS_S3_ENDPOINT_URL = process.env.AWS_S3_ENDPOINT_URL;
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is missing");
@@ -42,7 +44,8 @@ const s3 = new S3Client({
 });
 async function analyzeImageWithOpenAI(
   bytes: Uint8Array,
-  contentType: string
+  contentType: string,
+  model: string = OPENAI_MODEL
 ) {
   const base64 =
     Buffer.from(bytes).toString("base64");
@@ -57,7 +60,7 @@ async function analyzeImageWithOpenAI(
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-  model: OPENAI_MODEL,
+  model,
 
   input: [
     {
@@ -264,6 +267,42 @@ async function analyzeImageWithOpenAI(
 
   return data;
 }
+
+async function analyzeImageWithFallback(
+  bytes: Uint8Array,
+  contentType: string
+) {
+  try {
+    return await analyzeImageWithOpenAI(
+      bytes,
+      contentType,
+      OPENAI_MODEL
+    );
+  } catch (error) {
+    const message = String(error);
+    const shouldFallback =
+      /OpenAI API (429|5\d\d):/u.test(message);
+
+    if (
+      !shouldFallback ||
+      !OPENAI_FALLBACK_MODEL ||
+      OPENAI_FALLBACK_MODEL === OPENAI_MODEL
+    ) {
+      throw error;
+    }
+
+    console.warn(
+      `Primary model ${OPENAI_MODEL} failed; retrying with ${OPENAI_FALLBACK_MODEL}`
+    );
+
+    return await analyzeImageWithOpenAI(
+      bytes,
+      contentType,
+      OPENAI_FALLBACK_MODEL
+    );
+  }
+}
+
 function validateRecordShape(row: any) {
   const category = String(row.category || "").trim();
 
@@ -1353,7 +1392,7 @@ const runRecognitionJob = async (c: any) => {
       "image/jpeg";
 
     const analysis =
-      await analyzeImageWithOpenAI(
+      await analyzeImageWithFallback(
         bytes,
         contentType
       );
