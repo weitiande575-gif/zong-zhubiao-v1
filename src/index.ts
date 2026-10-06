@@ -20,8 +20,8 @@ const AWS_S3_ENDPOINT_URL = process.env.AWS_S3_ENDPOINT_URL;
 if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is missing");
 }
-if (!OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY is missing");
+if (!OPENAI_API_KEY && !OPENROUTER_API_KEY) {
+  throw new Error("No recognition provider API key configured");
 }
 const sql = postgres(DATABASE_URL, {
   ssl: "require",
@@ -47,6 +47,7 @@ const s3 = new S3Client({
 async function analyzeImageWithOpenAI(
   bytes: Uint8Array,
   contentType: string,
+  boundPeriodNo: number,
   model: string = OPENAI_MODEL,
   apiKey: string | undefined = OPENAI_API_KEY,
   endpoint: string = "https://api.openai.com/v1/responses",
@@ -59,6 +60,7 @@ async function analyzeImageWithOpenAI(
     endpoint,
     {
       method: "POST",
+      signal: AbortSignal.timeout(180000),
       headers: {
         "Authorization":
           `Bearer ${apiKey}`,
@@ -74,7 +76,10 @@ async function analyzeImageWithOpenAI(
         {
           type: "input_text",
           text:
-`请完整扫描整张图片，从上到下、从左到右，不要只识别局部。
+`本图片已由 recognition job 绑定为第${boundPeriodNo}期。绑定期数是资料归属依据。
+顶部未选中的期数导航按钮（例如278期、277期）、菜单、广告和无实际资料的更新提示不是独立资料期，不得生成records。
+只根据实际资料内容判断有效资料期；只有一个有效资料块时统一输出绑定期数${boundPeriodNo}。若确实有多个不同期的实际资料，则分别输出，后端将拒绝入库以防串期。
+请完整扫描整张图片，从上到下、从左到右，不要只识别局部。
 
 只整理以下15类：
 五行、四行、三行、五头、四头、三头、六肖、七肖、八肖、九肖、双波、波色、八尾、七尾、六尾。
@@ -273,55 +278,32 @@ async function analyzeImageWithOpenAI(
   return data;
 }
 
-async function analyzeImageWithOpenRouter(bytes: Uint8Array, contentType: string) {
-  return analyzeImageWithOpenAI(bytes, contentType, OPENROUTER_MODEL, OPENROUTER_API_KEY, "https://openrouter.ai/api/v1/responses", "OpenRouter");
+async function analyzeImageWithOpenRouter(bytes: Uint8Array, contentType: string, boundPeriodNo: number) {
+  return analyzeImageWithOpenAI(bytes, contentType, boundPeriodNo, OPENROUTER_MODEL, OPENROUTER_API_KEY, "https://openrouter.ai/api/v1/responses", "OpenRouter");
 }
 
-async function analyzeImageWithFallback(
-  bytes: Uint8Array,
-  contentType: string
-) {
-  try {
-    return {
-      analysis: await analyzeImageWithOpenAI(
-        bytes,
-        contentType,
-        OPENAI_MODEL
-      ),
-      modelUsed: OPENAI_MODEL
-    };
-  } catch (error) {
-    const message = String(error);
-    if (OPENROUTER_API_KEY && /credit_balance_exhausted|insufficient_quota/i.test(message)) {
-      return { analysis: await analyzeImageWithOpenRouter(bytes, contentType), modelUsed: OPENROUTER_MODEL };
-    }
-    const shouldFallback =
-      /OpenAI API (429|5\d\d):/u.test(message);
-
-    if (
-      !shouldFallback ||
-      !OPENAI_FALLBACK_MODEL ||
-      OPENAI_FALLBACK_MODEL === OPENAI_MODEL
-    ) {
-      throw error;
-    }
-
-    console.warn(
-      `Primary model ${OPENAI_MODEL} failed; retrying with ${OPENAI_FALLBACK_MODEL}`
-    );
-
+async function analyzeImageWithFallback(bytes: Uint8Array, contentType: string, boundPeriodNo: number) {
+  // OpenRouter is first: exhausted OpenAI quota must never block Qwen.
+  const providers = [
+    ...(OPENROUTER_API_KEY ? [{ model: OPENROUTER_MODEL, run: () => analyzeImageWithOpenRouter(bytes, contentType, boundPeriodNo) }] : []),
+    ...(OPENAI_API_KEY ? [{ model: OPENAI_MODEL, run: () => analyzeImageWithOpenAI(bytes, contentType, boundPeriodNo) }] : [])
+  ];
+  const errors: string[] = [];
+  for (const provider of providers) {
     try {
-      return {
-        analysis: await analyzeImageWithOpenAI(bytes, contentType, OPENAI_FALLBACK_MODEL),
-        modelUsed: OPENAI_FALLBACK_MODEL
-      };
-    } catch (fallbackError) {
-      if (OPENROUTER_API_KEY) {
-        return { analysis: await analyzeImageWithOpenRouter(bytes, contentType), modelUsed: OPENROUTER_MODEL };
-      }
-      throw fallbackError;
+      console.log(JSON.stringify({ event: "recognition_provider_start", period_no: boundPeriodNo, model: provider.model }));
+      const analysis = await provider.run();
+      const parsed = validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
+      return { analysis, parsed, modelUsed: provider.model };
+    } catch (error) {
+      const message = String(error);
+      console.error(JSON.stringify({ event: "recognition_provider_failed", model: provider.model, error: message }));
+      // Never retry another model to bypass ambiguous period detection.
+      if (message.includes("MULTIPLE_VALID_PERIODS")) throw error;
+      errors.push(message);
     }
   }
+  throw new Error(errors.join("; ") || "No recognition providers available");
 }
 
 function validateRecordShape(row: any) {
@@ -1257,6 +1239,7 @@ app.post("/api/recognition/claim", async (c) => {
         j.id AS job_id,
         j.batch_id,
         j.image_id,
+        j.period_no,
         j.status,
         j.attempt_count,
         i.original_name,
@@ -1323,12 +1306,7 @@ app.get("/api/recognition/image", async (c) => {
       })
     );
 
-    if (!object.Body) {
-      return c.json({
-        ok: false,
-        error: "Image body is empty"
-      }, 404);
-    }
+    if (!object.Body) throw new Error("Image body is empty");
 
     const bytes =
       await object.Body.transformToByteArray();
@@ -1375,17 +1353,18 @@ function validateAnalysisForBoundPeriod(
     throw new Error("Invalid AI response: periods is missing");
   }
 
-  const matched = parsed.periods.filter(
-    (period: any) =>
-      Number(period.period_no) === boundPeriodNo
+  const validPeriods = parsed.periods.filter((period: any) =>
+    period.status === "ok" && Array.isArray(period.records) &&
+    period.records.some((record: any) => record.category && !["平特", "平特一肖"].includes(record.category))
   );
-
-  if (matched.length === 0) {
-    throw new Error(
-      `AI response does not contain bound period ${boundPeriodNo}`
-    );
+  if (new Set(validPeriods.map((period: any) => Number(period.period_no))).size > 1) {
+    throw new Error("MULTIPLE_VALID_PERIODS: refusing cross-period records");
   }
-
+  if (!validPeriods.length) throw new Error("AI returned no usable records");
+  if (validPeriods.some((period: any) => Number(period.period_no) !== boundPeriodNo)) {
+    console.warn(JSON.stringify({ event: "recognition_period_rebound", from: validPeriods[0].period_no, to: boundPeriodNo }));
+  }
+  const matched = validPeriods.map((period: any) => ({ ...period, period_no: boundPeriodNo }));
   const records = matched.flatMap((period: any) =>
     Array.isArray(period.records) ? period.records : []
   ).filter((record: any) => {
@@ -1417,6 +1396,7 @@ function validateAnalysisForBoundPeriod(
       );
     }
   }
+  return { periods: matched };
 }
 
 const runRecognitionJob = async (c: any) => {
@@ -1455,6 +1435,11 @@ const runRecognitionJob = async (c: any) => {
     }
 
     const image = rows[0];
+    const boundPeriodNo = Number(image.period_no);
+    if (!Number.isInteger(boundPeriodNo) || boundPeriodNo <= 0) {
+      throw new Error("Recognition job period_no is invalid");
+    }
+    console.log(JSON.stringify({ event: "recognition_job_start", job_id: jobId, image_id: image.image_id, batch_id: image.batch_id, period_no: boundPeriodNo }));
     const object = await s3.send(
       new GetObjectCommand({
         Bucket: BUCKET_NAME,
@@ -1477,108 +1462,9 @@ const runRecognitionJob = async (c: any) => {
       image.content_type ||
       "image/jpeg";
 
-    let { analysis, modelUsed } =
-      await analyzeImageWithFallback(
-        bytes,
-        contentType
-      );
-
-    const boundPeriodNo = Number(image.period_no);
-
-    if (!Number.isInteger(boundPeriodNo) || boundPeriodNo <= 0) {
-      throw new Error("Recognition job period_no is invalid");
-    }
-
-    try {
-      validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
-    } catch (error) {
-      if (
-        !OPENAI_FALLBACK_MODEL ||
-        OPENAI_FALLBACK_MODEL === OPENAI_MODEL ||
-        modelUsed === OPENROUTER_MODEL
-      ) {
-        throw error;
-      }
-
-      console.warn(
-        `Primary result failed validation; retrying with ${OPENAI_FALLBACK_MODEL}`
-      );
-
-      analysis = await analyzeImageWithOpenAI(
-        bytes,
-        contentType,
-        OPENAI_FALLBACK_MODEL
-      );
-
-      modelUsed = OPENAI_FALLBACK_MODEL;
-
-      try {
-        validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
-      } catch (fallbackValidationError) {
-        if (!OPENROUTER_API_KEY) throw fallbackValidationError;
-        analysis = await analyzeImageWithOpenRouter(bytes, contentType);
-        modelUsed = OPENROUTER_MODEL;
-        validateAnalysisForBoundPeriod(analysis, boundPeriodNo);
-      }
-    }
-
-    const text =
-      (analysis.output || [])
-        .flatMap((item: any) =>
-          Array.isArray(item.content)
-            ? item.content
-            : []
-        )
-        .filter((part: any) =>
-          part.type === "output_text"
-        )
-        .map((part: any) =>
-          String(part.text || "")
-        )
-        .join("\n")
-        .trim();
-
-        const parsed = JSON.parse(text);
-
-    if (!parsed || !Array.isArray(parsed.periods)) {
-      throw new Error("Invalid AI response: periods is missing");
-    }
-
-
-    const matchedPeriods = parsed.periods.filter(
-      (period: any) => Number(period.period_no) === boundPeriodNo
-    );
-
-    if (matchedPeriods.length === 0) {
-      throw new Error(
-        `AI response does not contain bound period ${boundPeriodNo}`
-      );
-    }
-
-    const usableCandidateCount = matchedPeriods.reduce(
-      (sum: number, period: any) => {
-        const records = Array.isArray(period.records)
-          ? period.records
-          : [];
-
-        return sum + records.filter((record: any) => {
-          const category = String(record.category || "").trim();
-
-          return (
-            category &&
-            category !== "平特" &&
-            category !== "平特一肖"
-          );
-        }).length;
-      },
-      0
-    );
-
-    if (usableCandidateCount === 0) {
-      throw new Error(
-        "AI returned no usable records for bound period; preserving existing records"
-      );
-    }
+    const { analysis, parsed, modelUsed } = await analyzeImageWithFallback(bytes, contentType, boundPeriodNo);
+    const matchedPeriods = parsed.periods;
+    console.log(JSON.stringify({ event: "recognition_validated", job_id: jobId, model: modelUsed, period_no: boundPeriodNo, counts: matchedPeriods.map((p: any) => p.records.length) }));
 
     let insertedCount = 0;
 
@@ -1586,17 +1472,16 @@ const runRecognitionJob = async (c: any) => {
       await tx`
         DELETE FROM records
         WHERE image_id = ${image.image_id}
+          AND batch_id = ${image.batch_id}
       `;
 
-      const semanticSeen = new Set<string>();
+      let recordOrdinal = 0;
 
       for (const period of matchedPeriods) {
         const periodNo = boundPeriodNo;
 
       const records = Array.isArray(period.records)
-        ? [...period.records].sort((a: any, b: any) =>
-            Number(Boolean(b?.subtype)) - Number(Boolean(a?.subtype))
-          )
+        ? period.records
         : [];
 
       for (const record of records) {
@@ -1642,19 +1527,8 @@ const runRecognitionJob = async (c: any) => {
 
         items = shapeValidation.actual;
 
-        const semanticKey = [
-          periodNo,
-          category,
-          JSON.stringify(items)
-        ].join("|");
-
-        if (semanticSeen.has(semanticKey)) {
-          continue;
-        }
-
-        semanticSeen.add(semanticKey);
-
         const recordKey = [
+          ++recordOrdinal,
           image.image_id,
           periodNo,
           category,
@@ -1713,12 +1587,13 @@ const runRecognitionJob = async (c: any) => {
       `;
     });
 
+    console.log(JSON.stringify({ event: "recognition_job_done", job_id: jobId, period_no: boundPeriodNo, inserted_count: insertedCount, model: modelUsed }));
     return c.json({
       ok: true,
       job_id: jobId,
       image_id: image.image_id,
       original_name: image.original_name,
-      model: OPENAI_MODEL,
+      model: modelUsed,
       response_id: analysis.id || null,
       inserted_count: insertedCount,
       periods_count: parsed.periods.length,
@@ -1753,55 +1628,38 @@ const runRecognitionJob = async (c: any) => {
   }
 };
       app.get("/api/recognition/analyze", runRecognitionJob);
-    app.get("/api/recognition/start", async (c) => {
+const activeJobs = new Set<number>();
+const startRecognitionJob = async (c: any) => {
   const jobId = Number(c.req.query("job_id") || 0);
-
-  if (!jobId) {
-    return c.json({
-      ok: false,
-      error: "job_id is required"
-    }, 400);
+  if (!Number.isInteger(jobId) || jobId <= 0) return c.json({ ok: false, error: "job_id is required" }, 400);
+  if (activeJobs.has(jobId)) return c.json({ ok: true, job_id: jobId, status: "PROCESSING" });
+  activeJobs.add(jobId);
+  try {
+    const jobs = await sql`UPDATE recognition_jobs SET status = 'PROCESSING', started_at = NOW(), finished_at = NULL, last_error = NULL, attempt_count = attempt_count + 1 WHERE id = ${jobId} RETURNING id`;
+    if (!jobs.length) { activeJobs.delete(jobId); return c.json({ ok: false, error: "Job not found" }, 404); }
+    // The worker uses its own context; it never writes a second HTTP response.
+    const context = { req: { query: (key: string) => key === "job_id" ? String(jobId) : undefined }, json: (data: any) => data };
+    void runRecognitionJob(context).finally(() => activeJobs.delete(jobId));
+    return c.json({ ok: true, job_id: jobId, status: "PROCESSING" }, 202);
+  } catch (error) {
+    activeJobs.delete(jobId);
+    return c.json({ ok: false, error: String(error) }, 500);
   }
-
-  // 直接在当前服务内部运行识别，
-  // 不再通过 HTTP 请求 /api/recognition/analyze
-  void runRecognitionJob(c).catch((error) => {
-    console.error("Background recognition failed:", error);
-  });
-
-  return c.json({
-    ok: true,
-    job_id: jobId,
-    status: "STARTED"
-  });
+};
+app.get("/api/recognition/start", startRecognitionJob);
+app.post("/api/recognition/start", startRecognitionJob);
+app.get("/api/recognition/job", async (c) => {
+  const jobId = Number(c.req.query("job_id") || 0);
+  const rows = await sql`SELECT id AS job_id, batch_id, image_id, period_no, status, attempt_count, last_error, started_at, finished_at FROM recognition_jobs WHERE id = ${jobId}`;
+  if (!rows.length) return c.json({ ok: false, error: "Job not found" }, 404);
+  return c.json({ ok: true, job: rows[0] });
 });
-  
-
-  
-    
-      
-      
-  
-  
-
-  
-  
-  
-
-  
-    
-  
-
-  
-    
-    
-    
-  
 
       app.get("/api/recognition/records", async (c) => {
   try {
     const imageId = Number(c.req.query("image_id") || 0);
 const category = String(c.req.query("category") || "").trim();
+    const batchId = Number(c.req.query("batch_id") || 0);
     const periodNo = Number(c.req.query("period_no") || 0);
     if (!imageId) {
       return c.json({
@@ -1832,6 +1690,7 @@ const category = String(c.req.query("category") || "").trim();
   FROM records
 
 WHERE image_id = ${imageId}
+AND (${batchId} = 0 OR batch_id = ${batchId})
 AND (${category} = '' OR category = ${category})
 AND (${periodNo} = 0 OR period_no = ${periodNo})
 ORDER BY period_no ASC, source_order ASC, id ASC
@@ -2794,3 +2653,4 @@ serve({
 console.log(
   `Master API V1 running on port ${PORT}`
 );
+
